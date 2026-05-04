@@ -267,44 +267,69 @@ def test_refresh_token_with_rotation(
     *,
     tenant: str = "common",
     scope: str = DEFAULT_GRAPH_SCOPE,
+    max_retries: int = 3,
 ) -> tuple[bool, str | None, str | None]:
-    """测试 refresh token 是否有效；如服务端返回新的 refresh_token，则一并返回（用于滚动更新）。"""
-    try:
-        proxies = build_proxies(proxy_url)
-        resolved_scope = (scope or DEFAULT_GRAPH_SCOPE).strip() or DEFAULT_GRAPH_SCOPE
-        res = requests.post(
-            build_token_url(tenant),
-            data={
-                "client_id": client_id,
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-                "scope": resolved_scope,
-            },
-            timeout=30,
-            proxies=proxies,
-        )
+    """测试 refresh token 是否有效；如服务端返回新的 refresh_token，则一并返回（用于滚动更新）。
+    支持指数退避重试，遇到 429 时优先读取 Retry-After 头。"""
+    import time
 
-        if res.status_code == 200:
-            try:
-                payload = res.json()
-            except Exception:
-                payload = {}
-            new_refresh_token = payload.get("refresh_token")
-            return True, None, new_refresh_token
+    proxies = build_proxies(proxy_url)
+    resolved_scope = (scope or DEFAULT_GRAPH_SCOPE).strip() or DEFAULT_GRAPH_SCOPE
+    url = build_token_url(tenant)
+    data = {
+        "client_id": client_id,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "scope": resolved_scope,
+    }
 
+    last_error_msg = None
+    for attempt in range(max_retries + 1):
         try:
-            error_data = res.json()
-        except Exception:
-            error_data = {}
-        error_msg = None
-        if isinstance(error_data, dict):
-            error_msg = error_data.get("error_description") or error_data.get("error")
-        if not error_msg:
-            details = get_response_details(res)
-            error_msg = str(details)[:800] if details is not None else "未知错误"
-        return False, str(error_msg), None
-    except Exception as e:
-        return False, f"请求异常: {str(e)}", None
+            res = requests.post(url, data=data, timeout=15, proxies=proxies)
+
+            if res.status_code == 200:
+                try:
+                    payload = res.json()
+                except Exception:
+                    payload = {}
+                new_refresh_token = payload.get("refresh_token")
+                return True, None, new_refresh_token
+
+            # 429 限流：读取 Retry-After 并退避
+            if res.status_code == 429:
+                retry_after = None
+                try:
+                    retry_after = int(res.headers.get("Retry-After", 0))
+                except Exception:
+                    retry_after = None
+                wait = retry_after if retry_after else (2**attempt)
+                last_error_msg = f"请求被限流 (429)，{wait}s 后重试"
+                if attempt < max_retries:
+                    time.sleep(wait)
+                    continue
+
+            try:
+                error_data = res.json()
+            except Exception:
+                error_data = {}
+            error_msg = None
+            if isinstance(error_data, dict):
+                error_msg = error_data.get("error_description") or error_data.get("error")
+            if not error_msg:
+                details = get_response_details(res)
+                error_msg = str(details)[:800] if details is not None else "未知错误"
+            last_error_msg = str(error_msg)
+            # 非 429 的明确错误响应（如 400/401/403）不需要重试，直接返回
+            return False, last_error_msg, None
+        except Exception as e:
+            last_error_msg = f"请求异常: {str(e)}"
+            if attempt < max_retries:
+                time.sleep(2**attempt)
+                continue
+            return False, last_error_msg, None
+
+    return False, last_error_msg or "请求失败", None
 
 
 def delete_emails_graph(

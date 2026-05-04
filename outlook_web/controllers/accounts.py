@@ -2340,7 +2340,15 @@ def api_refresh_all_accounts() -> Any:
             test_refresh_token=graph_service.test_refresh_token_with_rotation,
         )
 
-    return Response(generate(), mimetype="text/event-stream")
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @login_required
@@ -2401,7 +2409,15 @@ def api_trigger_scheduled_refresh() -> Any:
             test_refresh_token=graph_service.test_refresh_token_with_rotation,
         )
 
-    return Response(generate(), mimetype="text/event-stream")
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ==================== 刷新日志 API ====================
@@ -2720,4 +2736,12 @@ def api_refresh_selected_accounts() -> Any:
             test_refresh_token=graph_service.test_refresh_token_with_rotation,
         )
 
-    return Response(generate(), mimetype="text/event-stream")
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

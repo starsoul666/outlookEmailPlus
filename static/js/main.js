@@ -4104,14 +4104,45 @@ ${details}
             const toastId = 'batch-refresh-toast-' + Date.now();
             showPersistentToast(toastId, `🔄 正在刷新 Token... 0 / ${accountIds.length}`);
 
+            const controller = new AbortController();
+            const OVERALL_TIMEOUT_MS = 120000; // 2 分钟整体超时
+            const HEARTBEAT_TIMEOUT_MS = 30000; // 30 秒心跳超时
+            let overallTimeoutId = null;
+            let heartbeatTimeoutId = null;
+            let isAborted = false;
+
+            function clearTimers() {
+                if (overallTimeoutId) clearTimeout(overallTimeoutId);
+                if (heartbeatTimeoutId) clearTimeout(heartbeatTimeoutId);
+            }
+
+            function startHeartbeatTimer() {
+                if (heartbeatTimeoutId) clearTimeout(heartbeatTimeoutId);
+                heartbeatTimeoutId = setTimeout(() => {
+                    if (!isAborted) {
+                        isAborted = true;
+                        controller.abort();
+                    }
+                }, HEARTBEAT_TIMEOUT_MS);
+            }
+
+            overallTimeoutId = setTimeout(() => {
+                if (!isAborted) {
+                    isAborted = true;
+                    controller.abort();
+                }
+            }, OVERALL_TIMEOUT_MS);
+
             try {
                 const response = await fetch('/api/accounts/refresh/selected', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ account_ids: accountIds })
+                    body: JSON.stringify({ account_ids: accountIds }),
+                    signal: controller.signal
                 });
 
                 if (!response.ok || !response.body) {
+                    clearTimers();
                     dismissPersistentToast(toastId);
                     showToast('刷新请求失败，请稍后重试', 'error');
                     return;
@@ -4121,10 +4152,18 @@ ${details}
                 const decoder = new TextDecoder();
                 let buffer = '';
                 let totalCount = accountIds.length;
+                let streamDone = false;
 
-                while (true) {
+                startHeartbeatTimer();
+
+                while (!streamDone) {
                     const { done, value } = await reader.read();
-                    if (done) break;
+                    if (done) {
+                        streamDone = true;
+                        break;
+                    }
+
+                    startHeartbeatTimer();
 
                     buffer += decoder.decode(value, { stream: true });
                     const lines = buffer.split('\n');
@@ -4145,13 +4184,25 @@ ${details}
                             totalCount = data.total;
                         }
                         if (data.type === 'complete' || data.type === 'error') {
+                            streamDone = true;
                             break;
                         }
                     }
                 }
+
+                clearTimers();
             } catch (error) {
+                clearTimers();
                 dismissPersistentToast(toastId);
-                showToast('刷新执行出现错误，请稍后重试', 'error');
+                if (error.name === 'AbortError') {
+                    if (isAborted) {
+                        showToast('刷新请求超时，请检查网络或代理配置后重试', 'warning');
+                    } else {
+                        showToast('刷新请求已取消', 'info');
+                    }
+                } else {
+                    showToast('刷新执行出现错误，请稍后重试', 'error');
+                }
                 console.error('batchRefreshSelected error:', error);
             }
         }

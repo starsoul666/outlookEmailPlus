@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -313,8 +314,10 @@ def stream_refresh_all_accounts(
                     invalid_token_failed_count += 1
 
             if index < total and delay_seconds > 0:
-                yield f"data: {json.dumps({'type': 'delay', 'seconds': delay_seconds}, ensure_ascii=False)}\n\n"
-                time.sleep(delay_seconds)
+                jitter = random.uniform(0, 2)
+                wait_seconds = delay_seconds + jitter
+                yield f"data: {json.dumps({'type': 'delay', 'seconds': wait_seconds}, ensure_ascii=False)}\n\n"
+                time.sleep(wait_seconds)
 
         finish_refresh_run(
             conn,
@@ -613,8 +616,10 @@ def stream_trigger_scheduled_refresh(
                     invalid_token_failed_count += 1
 
             if index < total and delay_seconds > 0:
-                yield f"data: {json.dumps({'type': 'delay', 'seconds': delay_seconds}, ensure_ascii=False)}\n\n"
-                time.sleep(delay_seconds)
+                jitter = random.uniform(0, 2)
+                wait_seconds = delay_seconds + jitter
+                yield f"data: {json.dumps({'type': 'delay', 'seconds': wait_seconds}, ensure_ascii=False)}\n\n"
+                time.sleep(wait_seconds)
 
         finish_refresh_run(
             conn,
@@ -930,8 +935,10 @@ def stream_refresh_selected_accounts(
             )
 
             if index < total and delay_seconds > 0:
-                yield f"data: {json.dumps({'type': 'delay', 'seconds': delay_seconds}, ensure_ascii=False)}\n\n"
-                time.sleep(delay_seconds)
+                jitter = random.uniform(0, 2)
+                wait_seconds = delay_seconds + jitter
+                yield f"data: {json.dumps({'type': 'delay', 'seconds': wait_seconds}, ensure_ascii=False)}\n\n"
+                time.sleep(wait_seconds)
 
         finish_refresh_run(
             conn,
