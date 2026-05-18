@@ -6,6 +6,7 @@
 > 基于 TD v0.1：`docs/TD/2026-05-18-Issue60-号池管理UI与状态维护TD.md`
 > 基于 TDD v0.1：`docs/TDD/2026-05-18-Issue60-号池管理UI与状态维护TDD.md`
 > 目标版本：待定
+> 更新日期：2026-05-18（根据实际实现进展回填）
 
 > 会话约束（必须保持）：
 > 1. 默认不启动服务，不额外跑测试
@@ -19,11 +20,11 @@
 | 阶段 | 任务数 | 状态 |
 |---|---:|---|
 | Phase 0: 文档闭环与范围冻结 | 4 | ✅ 已完成 |
-| Phase 1: 内部查询接口 MVP | 4 | ⏳ 待开发 |
-| Phase 2: 单账号管理动作 MVP | 5 | ⏳ 待开发 |
-| Phase 3: 前端号池管理页 MVP | 5 | ⏳ 待开发 |
-| Phase 4: 增强项（强制释放 / 审计 / 最近流转） | 4 | ⏳ 待开发 |
-| Phase 5: 测试与验收 | 5 | ⏳ 待开发 |
+| Phase 1: 内部查询接口 MVP | 4 | ✅ 已完成 |
+| Phase 2: 单账号管理动作 MVP | 5 | ✅ 已完成（审计未提前） |
+| Phase 3: 前端号池管理页 MVP | 5 | ✅ 已完成 |
+| Phase 4: 增强项（强制释放 / 审计 / 最近流转） | 4 | ⏳ 部分完成（仅强制释放） |
+| Phase 5: 测试与验收 | 5 | ⏳ 已执行自动化（44/44 通过），人工验收待完成 |
 
 ---
 
@@ -64,27 +65,27 @@
 - `outlook_web/routes/pool_admin.py`
 - `outlook_web/controllers/pool_admin.py`
 
-- [ ] 新增 `GET /api/pool-admin/accounts`
-- [ ] 仅允许登录态管理员访问
+- [x] 新增 `GET /api/pool-admin/accounts`
+- [x] 仅允许登录态管理员访问（当前实现为 `@login_required`）
 
 ### Task 1.2：实现分页查询
 
 **建议文件**：`outlook_web/repositories/pool_admin.py`
 
-- [ ] 支持池内 / 池外筛选
-- [ ] 支持按 `pool_status` 筛选
-- [ ] 支持 provider / group / search
-- [ ] 返回分页结构
+- [x] 支持池内 / 池外筛选
+- [x] 支持按 `pool_status` 筛选
+- [x] 支持 provider / group / search
+- [x] 返回分页结构
 
 ### Task 1.3：补齐返回字段
 
-- [ ] 返回 `pool_status`
-- [ ] 返回 `claimed_by / claimed_at / lease_expires_at`
-- [ ] 返回 `last_result / last_result_detail`
+- [x] 返回 `pool_status`
+- [x] 返回 `claimed_by / claimed_at / lease_expires_at`
+- [x] 返回 `last_result / last_result_detail`
 
 ### Task 1.4：保持现有账号列表接口不被污染
 
-- [ ] 不强行把全部号池管理参数塞进 `GET /api/accounts`
+- [x] 不强行把全部号池管理参数塞进 `GET /api/accounts`
 
 ---
 
@@ -92,31 +93,31 @@
 
 ### Task 2.1：定义动作枚举
 
-- [ ] `move_into_pool`
-- [ ] `move_out_of_pool`
-- [ ] `restore_available`
-- [ ] `freeze`
-- [ ] `retire`
+- [x] `move_into_pool`
+- [x] `move_out_of_pool`
+- [x] `restore_available`
+- [x] `freeze`
+- [x] `retire`
 
 ### Task 2.2：实现单账号动作接口
 
-- [ ] 新增 `POST /api/pool-admin/accounts/<id>/action`
-- [ ] 统一参数校验与错误返回
+- [x] 新增 `POST /api/pool-admin/accounts/<id>/action`
+- [x] 统一参数校验与错误返回
 
 ### Task 2.3：实现允许状态校验
 
-- [ ] `NULL -> available`
-- [ ] `available / cooldown / used / frozen / retired -> NULL`
-- [ ] 非法状态跳转明确报错
+- [x] `NULL -> available`
+- [x] `available / cooldown / used / frozen / retired -> NULL`
+- [x] 非法状态跳转明确报错
 
 ### Task 2.4：保护 `claimed`
 
-- [ ] 通用动作禁止修改 `claimed`
-- [ ] 返回稳定错误码/文案
+- [x] 通用动作禁止修改 `claimed`
+- [x] 返回稳定错误码/文案
 
 ### Task 2.5：写入基础审计（若本阶段一并做）
 
-- [ ] 若决定把审计提前到 MVP，则至少记录动作、账号、前后状态；否则留到 Phase 4
+- [x] 若决定把审计提前到 MVP，则至少记录动作、账号、前后状态；否则留到 Phase 4（本次未提前，留到 Phase 4）
 
 ---
 
@@ -124,35 +125,35 @@
 
 ### Task 3.1：新增页面入口
 
-- [ ] 在主前端新增“号池管理”入口
-- [ ] 与概览页职责分离
-- [ ] 保持 `templates/index.html` 现有 `.page` + `navigate(page)` 集成方式
+- [x] 在主前端新增“号池管理”入口
+- [x] 与概览页职责分离
+- [x] 保持 `templates/index.html` 现有 `.page` + `navigate(page)` 集成方式
 
 ### Task 3.2：新增前端模块
 
 **建议文件**：`static/js/features/pool_admin.js`
 
-- [ ] 查询列表
-- [ ] 渲染状态标签
-- [ ] 执行动作并刷新
-- [ ] 风格参考 `static/js/features/overview.js` 与现有账号列表交互模式
+- [x] 查询列表
+- [x] 渲染状态标签
+- [x] 执行动作并刷新
+- [x] 风格参考 `static/js/features/overview.js` 与现有账号列表交互模式
 
 ### Task 3.3：实现筛选栏
 
-- [ ] 池内 / 池外
-- [ ] `pool_status`
-- [ ] provider / group / search
+- [x] 池内 / 池外
+- [x] `pool_status`
+- [x] provider / group / search
 
 ### Task 3.4：实现最小动作区
 
-- [ ] 移入号池
-- [ ] 移出号池
-- [ ] 恢复可用（若本期纳入）
+- [x] 移入号池
+- [x] 移出号池
+- [x] 恢复可用（若本期纳入）
 
 ### Task 3.5：`claimed` 视觉保护
 
-- [ ] 占用中状态单独标识
-- [ ] 禁用不安全动作
+- [x] 占用中状态单独标识
+- [x] 禁用不安全动作
 
 ---
 
@@ -160,9 +161,9 @@
 
 ### Task 4.1：强制释放
 
-- [ ] 新增 `force_release` 动作
-- [ ] 二次确认
-- [ ] 与现有 pool 语义保持一致
+- [x] 新增 `force_release` 动作
+- [x] 二次确认
+- [ ] 与现有 pool 语义保持一致（当前为 pool_admin 独立受控实现，未复用 external release 语义）
 
 ### Task 4.2：最近流转展示
 
@@ -186,30 +187,48 @@
 
 ### Task 5.1：查询接口测试
 
-- [ ] 池内/池外筛选
-- [ ] `pool_status` 筛选
-- [ ] 分页与搜索
+- [x] 池内/池外筛选（自动化已通过）
+- [x] `pool_status` 筛选（自动化已通过）
+- [x] 分页与搜索（自动化已通过）
 
 ### Task 5.2：动作接口测试
 
-- [ ] 合法状态跳转
-- [ ] 非法跳转拦截
-- [ ] `claimed` 保护
+- [x] 合法状态跳转（自动化已通过）
+- [x] 非法跳转拦截（自动化已通过）
+- [x] `claimed` 保护（自动化已通过）
 
 ### Task 5.3：前端交互测试
 
-- [ ] 页面加载
-- [ ] 动作成功反馈
-- [ ] 动作失败反馈
+- [x] 页面加载（前端契约测试已通过）
+- [x] 动作成功反馈（前端/接口契约测试已通过）
+- [x] 动作失败反馈（前端/接口契约测试已通过）
 
 ### Task 5.4：增强项测试
 
-- [ ] 强制释放
+- [x] 强制释放（自动化已通过）
 - [ ] 最近流转展示
 - [ ] 审计写入
 
 ### Task 5.5：人工验收
 
-- [ ] 看得见池内/池外
-- [ ] 挪得动账号
-- [ ] `claimed` 不被误改
+- [ ] 看得见池内/池外（待人工验收）
+- [ ] 挪得动账号（待人工验收）
+- [ ] `claimed` 不被误改（待人工验收）
+
+---
+
+## 进展补充（基于本轮代码审查）
+
+1. MVP 主链路已落地：池内/池外查询、移入、移出、`claimed` 保护已实现。
+2. 增强项仅完成 `force_release`；审计与最近流转仍未落地。
+3. 方案 A 已补齐前端 `group` 筛选入口，并透传 `group_id`。
+4. Issue #60 相关自动化已执行：44 条用例全部通过；仍待人工验收项确认。
+
+---
+
+## 关联 BUG 记录
+
+1. `docs/BUG/2026-05-18-Issue60-号池管理首版验收缺口与兼容性回归证据不足BUG.md`
+   - 记录并回填方案 A 修复闭环：
+     - 前端 group 筛选入口已接入
+     - 旧接口兼容性自动化回归证据已补齐

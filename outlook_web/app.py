@@ -43,6 +43,7 @@ def create_app(*, autostart_scheduler: Optional[bool] = None):
             overview,
             pages,
             plugins,
+            pool_admin,
             scheduler,
             settings,
             system,
@@ -186,6 +187,7 @@ def create_app(*, autostart_scheduler: Optional[bool] = None):
         app.register_blueprint(system.create_blueprint())
         app.register_blueprint(audit.create_blueprint())
         app.register_blueprint(overview.create_blueprint())
+        app.register_blueprint(pool_admin.create_blueprint())
         app.register_blueprint(external_pool.create_blueprint(csrf_exempt=csrf_exempt))
         app.register_blueprint(external_temp_emails.create_blueprint(csrf_exempt=csrf_exempt))
         if app_config.get_oauth_tool_enabled():

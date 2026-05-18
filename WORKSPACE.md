@@ -8,6 +8,170 @@
 
 ### 操作记录
 
+#### 270. Issue #60 — 方案 A 落地后二次复审与文档回填（无新增代码改动）
+
+**时间**：2026-05-18
+
+**操作背景**：
+用户要求在方案 A 完成后“重新审查”，并继续把会话相关文档按实际状态回填，同时记录到 `WORKSPACE.md`。
+
+**本轮补充获取上下文**：
+
+1. 复读 Issue #60 文档链（PRD/FD/TD/TDD/TODO）当前状态
+2. 复读当前实现代码（pool_admin route/controller/service/repository + 前端模块）
+3. 复读兼容性回归测试文件与执行结果（44/44）
+
+**本轮审查结论（摘要）**：
+
+1. MVP 必须项：池内/池外可见、移入、移出、`claimed` 保护已满足
+2. 方案 A 两项修复目标已闭环：
+   - group 筛选入口已补齐
+   - 兼容性回归证据已补齐（`GET /api/accounts` / `/api/external/pool/*` / `/api/overview/pool`）
+3. 当前主要剩余为增强项与人工验收：审计、最近流转、手工验收清单
+
+**本轮文档更新**：
+
+1. `docs/TODO/2026-05-18-Issue60-号池管理UI与状态维护TODO.md`
+   - 将“前端 group 缺口”改为“已补齐”
+   - 将关联 BUG 描述更新为“已闭环记录”
+
+**是否改动代码**：否（本轮为复审与文档回填）
+
+#### 269. Issue #60 — 方案 A 修复落地（group筛选 + 兼容回归）
+
+**时间**：2026-05-18
+
+**操作背景**：
+用户确认按方案 A 直接推进修复：补齐前端 group 筛选入口，并补上旧接口兼容性回归证据。
+
+**本轮补充获取上下文**：
+
+1. 复核当前 pool-admin 前端筛选控件与查询参数构造逻辑
+2. 复核 groups 接口可复用能力（`GET /api/groups`）
+3. 复核现有回归测试覆盖缺口（`GET /api/accounts`、`/api/external/pool/*`、`/api/overview/pool`）
+
+**本轮实现改动**：
+
+1. 前端补齐 group 筛选入口：
+   - `templates/index.html` 新增 `poolAdminGroupFilter`
+   - `static/js/features/pool_admin.js` 新增分组选项加载与 `group_id` 参数透传
+2. i18n 词条补充：
+   - `static/js/i18n.js` 增加 `所有分组`（All Groups）
+3. 测试补齐：
+   - `tests/test_pool_admin_api.py` 新增 group 过滤用例
+   - 新增 `tests/test_issue60_compatibility_regression.py` 覆盖：
+     - `GET /api/accounts` 旧语义
+     - `/api/external/pool/*` 外部契约
+     - `/api/overview/pool` 概览链路
+
+**测试执行结果**：
+
+执行：
+`python -m unittest tests.test_pool_admin_repository tests.test_pool_admin_service tests.test_pool_admin_api tests.test_pool_admin_frontend_contract tests.test_issue60_compatibility_regression -v`
+
+结果：`Ran 44 tests ... OK`
+
+**本轮文档同步**：
+
+1. `docs/BUG/2026-05-18-Issue60-号池管理首版验收缺口与兼容性回归证据不足BUG.md`
+   - 状态更新为“方案 A 已完成”
+   - 回填修复落地与验证结果
+2. `docs/TODO/2026-05-18-Issue60-号池管理UI与状态维护TODO.md`
+   - Phase 3 更新为已完成
+   - 自动化结果更新为 44/44
+3. `docs/FD/2026-05-18-Issue60-号池管理UI与状态维护FD.md`
+   - 标注 group 筛选缺口已修复
+4. `docs/TDD/2026-05-18-Issue60-号池管理UI与状态维护TDD.md`
+   - 增加兼容回归测试文件记录
+   - 结果更新为 44/44
+
+**本轮结论**：
+
+1. 方案 A 两个核心目标已完成：
+   - group 筛选入口已补齐
+   - 兼容性回归证据已补齐并通过
+2. 当前 Issue #60 剩余待办主要为人工验收与增强项（审计、最近流转）
+
+**是否改动代码**：是（前端筛选与测试补齐）
+
+#### 268. Issue #60 — 形成验收缺口 BUG 文档并同步文档链（无代码改动）
+
+**时间**：2026-05-18
+
+**操作背景**：
+用户要求把本轮审查发现的问题形成正式 BUG 文档，并同步更新会话相关文档与 `WORKSPACE.md`，为后续设计与修复决策提供基线。
+
+**本轮补充获取上下文**：
+
+1. 读取 BUG 文档既有模板与结构（含 Issue #56 / Issue #57 文档）
+2. 复核 Issue #60 当前文档状态：FD / TODO / TDD
+3. 复核审查结论中已确认的两项缺口：
+   - 前端 group 筛选入口缺失
+   - 旧接口兼容性回归证据不足
+
+**本轮文档更新**：
+
+1. 新增 BUG 文档：
+   - `docs/BUG/2026-05-18-Issue60-号池管理首版验收缺口与兼容性回归证据不足BUG.md`
+2. 同步 TODO 关联：
+   - `docs/TODO/2026-05-18-Issue60-号池管理UI与状态维护TODO.md`
+3. 同步 FD 关联：
+   - `docs/FD/2026-05-18-Issue60-号池管理UI与状态维护FD.md`
+4. 同步项目地图索引描述：
+   - `docs/项目地图.md`
+
+**本轮结论**：
+
+1. 已把“验收缺口”从口头审查结论沉淀为可追踪 BUG 文档
+2. 文档链已明确该问题属于“可修复的首版缺口”，不是 MVP 主链路不可用
+3. 下一步可基于 BUG 文档在方案 A（补实现+补回归）与方案 B（降级口径）之间做设计决策
+
+**是否改动代码**：否（本次仅新增/更新文档）
+
+#### 267. Issue #60 — 根据实际实现回填文档状态与差异（无代码改动）
+
+**时间**：2026-05-18
+
+**操作背景**：
+用户要求先完成 Issue #60 实现审查，再把会话相关文档按“当前真实落地状态”回填更新，并同步记录到 `WORKSPACE.md`。
+
+**本轮补充获取上下文**：
+
+1. 阅读 Issue #60 文档链：PRD / FD / TD / TDD / TODO
+2. 读取当前实现改动文件：
+   - 后端：`outlook_web/routes|controllers|services|repositories/pool_admin.py` + `outlook_web/app.py`
+   - 前端：`templates/index.html`、`static/js/features/pool_admin.js`、`static/js/main.js`、`templates/partials/scripts.html`、`static/js/i18n.js`
+3. 读取当前测试文件：
+   - `tests/test_pool_admin_repository.py`
+   - `tests/test_pool_admin_service.py`
+   - `tests/test_pool_admin_api.py`
+   - `tests/test_pool_admin_frontend_contract.py`
+
+**本轮文档更新**：
+
+1. `docs/TODO/2026-05-18-Issue60-号池管理UI与状态维护TODO.md`
+   - 将 Phase 1/2 标记为已完成
+   - 将 Phase 3/4/5 按“部分完成/待验收”回填
+   - 明确当前缺口：前端 group 筛选入口、审计、最近流转
+2. `docs/FD/2026-05-18-Issue60-号池管理UI与状态维护FD.md`
+   - 更新状态为“已实现待验收”
+   - 新增实现对齐快照与未完成项
+3. `docs/TD/2026-05-18-Issue60-号池管理UI与状态维护TD.md`
+   - 更新状态为“已实现待验收”
+   - 增补 `force_release` 实际落地路径说明（独立受控动作，未复用 external release 语义）
+4. `docs/TDD/2026-05-18-Issue60-号池管理UI与状态维护TDD.md`
+   - 标注“用例已落地，待执行回归”
+   - 回填当前已新增的 4 个测试文件清单
+
+**本轮结论**：
+
+1. 文档状态已从“待开发”同步到“已实现待验收”的真实阶段
+2. 已明确记录当前仍待补项，避免误判为“全部完成”
+3. 已执行 Issue #60 相关自动化测试：`Ran 40 tests ... OK`
+4. 当前仍需补齐/确认：前端 group 筛选入口、审计、最近流转、人工验收
+
+**是否改动代码**：否（本次仅修订文档与工作记录；测试执行未改代码）
+
 #### 266. Issue #60 — 前后端集成与现有风格对齐专项审查（无代码改动）
 
 **时间**：2026-05-18

@@ -456,6 +456,7 @@
             if (page === 'temp-emails' && typeof loadTempEmails === 'function') loadTempEmails(true);
             if (page === 'settings') loadSettings();
             if (page === 'refresh-log') loadRefreshLogPage();
+            if (page === 'pool-admin' && typeof loadPoolAdmin === 'function') loadPoolAdmin(true);
             if (page === 'audit') loadAuditLogPage();
         }
 
@@ -470,6 +471,7 @@
                 'temp-emails': ['临时邮箱', '创建和管理临时邮箱'],
                 'refresh-log': ['刷新日志', 'Token 刷新历史记录'],
                 'settings': ['系统设置', '配置系统参数'],
+                'pool-admin': ['号池管理', '邮箱池状态维护与调度'],
                 'audit': ['审计日志', '系统操作记录']
             };
             const t = titles[page] || [page, ''];

@@ -38,6 +38,9 @@
                 <button class="nav-item" data-page="mailbox" onclick="navigate('mailbox')">
                     <span class="nav-icon">📬</span><span>账号管理</span>
                 </button>
+                <button class="nav-item" data-page="pool-admin" onclick="navigate('pool-admin')">
+                    <span class="nav-icon">🎱</span><span>号池管理</span>
+                </button>
                 <button class="nav-item" data-page="temp-emails" onclick="navigate('temp-emails')">
                     <span class="nav-icon">⚡</span><span>临时邮箱</span>
                 </button>
@@ -1031,6 +1034,48 @@
 
                 </div>
                 </div><!-- /settings-card-shell -->
+            </div>
+
+            <!-- ===== Page: Pool Admin ===== -->
+            <div class="page page-hidden" id="page-pool-admin">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🎱 号池管理</div>
+                    </div>
+                    <div class="card-body" id="poolAdminContainer">
+                        <div class="pool-admin-filters" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem;">
+                            <select id="poolAdminInPoolFilter" class="form-select" style="min-width:120px;" onchange="loadPoolAdmin(true)">
+                                <option value="all">全部</option>
+                                <option value="true">池内</option>
+                                <option value="false">池外</option>
+                            </select>
+                            <select id="poolAdminStatusFilter" class="form-select" style="min-width:140px;" onchange="loadPoolAdmin(true)">
+                                <option value="">所有状态</option>
+                                <option value="available">可用</option>
+                                <option value="claimed">占用中</option>
+                                <option value="cooldown">冷却中</option>
+                                <option value="used">已使用</option>
+                                <option value="frozen">冻结</option>
+                                <option value="retired">退休</option>
+                            </select>
+                            <select id="poolAdminProviderFilter" class="form-select" style="min-width:120px;" onchange="loadPoolAdmin(true)">
+                                <option value="">所有类型</option>
+                                <option value="outlook">Outlook</option>
+                                <option value="imap">IMAP</option>
+                                <option value="custom">Custom</option>
+                                <option value="cloudflare_temp_mail">CF Temp Mail</option>
+                            </select>
+                            <select id="poolAdminGroupFilter" class="form-select" style="min-width:140px;" onchange="loadPoolAdmin(true)">
+                                <option value="">所有分组</option>
+                            </select>
+                            <input type="text" id="poolAdminSearch" class="form-input" placeholder="搜索邮箱 / 备注 / 域名…" style="min-width:200px;" oninput="debouncePoolAdminSearch()">
+                        </div>
+                        <div id="poolAdminTableWrapper">
+                            <div class="loading-overlay"><span class="spinner"></span> 加载中…</div>
+                        </div>
+                        <div class="pool-admin-pagination" id="poolAdminPagination" style="margin-top:1rem;"></div>
+                    </div>
+                </div>
             </div>
 
             <!-- ===== Page: Audit ===== -->

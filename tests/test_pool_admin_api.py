@@ -74,6 +74,21 @@ class PoolAdminApiBase(unittest.TestCase):
             row = db.execute("SELECT id FROM accounts WHERE email = ?", (email,)).fetchone()
             return row["id"]
 
+    def _make_group_via_db(self, *, name_prefix="PoolAdminGroup"):
+        """创建测试分组并返回 group_id"""
+        with self.app.app_context():
+            from outlook_web.db import get_db
+
+            db = get_db()
+            name = f"{name_prefix}_{secrets.token_hex(3)}"
+            db.execute(
+                "INSERT INTO groups (name, description, color, proxy_url, is_system) VALUES (?, '', '#123456', '', 0)",
+                (name,),
+            )
+            db.commit()
+            row = db.execute("SELECT id FROM groups WHERE name = ?", (name,)).fetchone()
+            return row["id"]
+
     def _make_claimed_via_db(self, *, caller_id="bot1", task_id="task1"):
         """通过直接 DB 操作创建 claimed 账号"""
         import secrets as _secrets
@@ -155,6 +170,38 @@ class PoolAdminQueryApiTests(PoolAdminApiBase):
         returned_ids = [item["id"] for item in data["items"]]
         self.assertIn(id_out, returned_ids)
         self.assertNotIn(id_in, returned_ids)
+
+    def test_pool_admin_accounts_supports_group_filter(self):
+        """查询接口支持 group_id 筛选"""
+        with self.app.app_context():
+            from outlook_web.db import get_db
+
+            db = get_db()
+            group_a = self._make_group_via_db(name_prefix="PoolAdminA")
+            group_b = self._make_group_via_db(name_prefix="PoolAdminB")
+
+            email_a = f"api_group_a_{secrets.token_hex(4)}@example.com"
+            email_b = f"api_group_b_{secrets.token_hex(4)}@example.com"
+            db.execute(
+                "INSERT INTO accounts (email, client_id, refresh_token, status, pool_status, provider, group_id) VALUES (?, 'test_client', 'test_token', 'active', 'available', 'outlook', ?)",
+                (email_a, group_a),
+            )
+            db.execute(
+                "INSERT INTO accounts (email, client_id, refresh_token, status, pool_status, provider, group_id) VALUES (?, 'test_client', 'test_token', 'active', 'available', 'outlook', ?)",
+                (email_b, group_b),
+            )
+            db.commit()
+
+            row_a = db.execute("SELECT id FROM accounts WHERE email = ?", (email_a,)).fetchone()
+            row_b = db.execute("SELECT id FROM accounts WHERE email = ?", (email_b,)).fetchone()
+            id_a, id_b = row_a["id"], row_b["id"]
+
+        resp = self._authed_get(f"/api/pool-admin/accounts?in_pool=true&group_id={group_a}")
+        self.assertEqual(resp.status_code, 200)
+        data = self._assert_json(resp)
+        returned_ids = [item["id"] for item in data["items"]]
+        self.assertIn(id_a, returned_ids)
+        self.assertNotIn(id_b, returned_ids)
 
 
 # ===== MVP: §7.2 动作接口 =====
