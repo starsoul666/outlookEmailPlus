@@ -419,11 +419,22 @@ def _version_gt(a: str, b: str) -> bool:
 
 @login_required
 def api_version_check() -> Any:
-    """检查是否有新版本可用（内存缓存，10 分钟 TTL）"""
+    """检查是否有新版本可用（内存缓存，10 分钟 TTL；可通过 enable_version_check 关闭自动检查）"""
     import json as _json
     import urllib.request
 
     global _version_cache, _version_cache_at
+
+    # 支持通过 settings 完全关闭版本检查
+    if settings_repo.get_setting("enable_version_check", "true").lower() != "true":
+        return jsonify({
+            "success": True,
+            "has_update": False,
+            "current_version": APP_VERSION,
+            "latest_version": APP_VERSION,
+            "release_url": "",
+            "disabled": True,
+        })
 
     now = time.time()
     if _version_cache is not None and (now - _version_cache_at) < _VERSION_CACHE_TTL:

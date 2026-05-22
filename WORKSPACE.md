@@ -113,6 +113,50 @@
 
 ---
 
+#### 286B. Issue #69 — Phase 2 接口缓存与查询收敛
+
+**时间**：2026-05-22
+
+**操作背景**：
+Phase 1 首屏降载完成后，继续执行 Phase 2 接口缓存与查询收敛，进一步压缩重复查询与冷缓存慢点。
+
+**本次改动**：
+
+1. **`outlook_web/controllers/overview.py`** — overview summary 30 秒 TTL 缓存
+   - 新增 `_OVERVIEW_SUMMARY_CACHE` + `_OVERVIEW_SUMMARY_CACHE_AT` + `TTL=30` 进程级缓存
+   - `api_get_overview_summary()` 先查缓存，命中则直接返回
+   - 30 秒 TTL 兼顾数据实时性（dashboard 默认 10 秒自动刷新）与请求降频
+
+2. **`outlook_web/controllers/system.py`** — version-check 开关化
+   - `api_version_check()` 新增 `enable_version_check` 设置检查
+   - 设置为非 `true` 时返回 `disabled: true`，不走外网请求
+   - 保留手动检查入口（修改设置后重新启用即可）
+
+3. **`static/js/main.js`** — 前端尊重 version-check 开关
+   - `checkVersionUpdate()` 收到 `disabled: true` 时直接返回，不展示也不重试
+
+**跳过的任务**：
+- Task 2.3（`/api/accounts` 首屏使用量收敛）：page_size=50 已合理，Phase 1 已解决首屏请求问题
+- Task 2.4（`/api/settings` 查询成本复核）：Phase 1 已通过 `/api/bootstrap` 绕过，不再需要额外处理
+
+**验证结果**：
+- ✅ 语法检查通过
+- ✅ 41 个测试全部通过（overview / groups）
+
+**修改文件清单**：
+
+| 文件 | 改动内容 |
+|------|----------|
+| `outlook_web/controllers/overview.py` | 新增 summary 30s TTL 缓存 |
+| `outlook_web/controllers/system.py` | version-check 支持 enable_version_check 开关 |
+| `static/js/main.js` | 前端尊重 disabled 标志 |
+
+**是否修改业务代码**：是
+
+**是否启动/停止服务**：否
+
+---
+
 #### 285. Issue #69 实施提示词：为后续 AI/协作者输出统一执行入口
 
 **时间**：2026-05-22

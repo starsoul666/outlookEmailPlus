@@ -4791,6 +4791,8 @@ ${details}
                 const res = await fetch('/api/system/version-check');
                 if (!res.ok) return;
                 const data = await res.json();
+                // 版本检查被管理员关闭时，不再提示也不再重试
+                if (data.disabled) return;
                 if (data.has_update) {
                     const banner = document.getElementById('versionUpdateBanner');
                     const msg = document.getElementById('versionUpdateMsg');
