@@ -591,6 +591,102 @@ class ImportExportV2AutoTests(unittest.TestCase):
         self.assertTrue(filename.startswith("accounts_export_selected_"))
         self.assertRegex(filename, r"^accounts_export_selected_\d{8}_\d{6}\.txt$")
 
+    def test_export_selected_v2_by_account_ids_only_exports_checked_accounts(self):
+        client = self.app.test_client()
+        self._login(client)
+
+        unique = uuid.uuid4().hex
+        group_id_a = self._get_or_create_group(f"勾选导出A_{unique}")
+        group_id_b = self._get_or_create_group(f"勾选导出B_{unique}")
+
+        selected_outlook = f"checked_out_{unique}@outlook.com"
+        selected_imap = f"checked_g_{unique}@gmail.com"
+        unselected_email = f"unchecked_{unique}@outlook.com"
+        tmp_email = f"tmp_checked_{unique}@temp.example"
+
+        conn = self.module.create_sqlite_connection()
+        try:
+            cur1 = conn.execute(
+                """
+                INSERT INTO accounts (email, password, client_id, refresh_token, account_type, provider, group_id, remark, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    selected_outlook,
+                    self.module.encrypt_data("pw_" + unique),
+                    "cid_" + unique,
+                    self.module.encrypt_data("rt_" + unique),
+                    "outlook",
+                    "outlook",
+                    group_id_a,
+                    "",
+                    "active",
+                ),
+            )
+            selected_outlook_id = int(cur1.lastrowid)
+
+            cur2 = conn.execute(
+                """
+                INSERT INTO accounts (email, password, client_id, refresh_token, account_type, provider, imap_host, imap_port, imap_password, group_id, remark, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    selected_imap,
+                    "",
+                    "",
+                    "",
+                    "imap",
+                    "gmail",
+                    "imap.gmail.com",
+                    993,
+                    self.module.encrypt_data("imap_pw_" + unique),
+                    group_id_b,
+                    "",
+                    "active",
+                ),
+            )
+            selected_imap_id = int(cur2.lastrowid)
+
+            conn.execute(
+                """
+                INSERT INTO accounts (email, password, client_id, refresh_token, account_type, provider, group_id, remark, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    unselected_email,
+                    self.module.encrypt_data("pw_unchecked_" + unique),
+                    "cid_unchecked_" + unique,
+                    self.module.encrypt_data("rt_unchecked_" + unique),
+                    "outlook",
+                    "outlook",
+                    group_id_a,
+                    "",
+                    "active",
+                ),
+            )
+            conn.execute("INSERT OR IGNORE INTO temp_emails (email) VALUES (?)", (tmp_email,))
+            conn.commit()
+        finally:
+            conn.close()
+
+        token = self._issue_export_token(client)
+        export_resp = client.post(
+            "/api/accounts/export-selected",
+            headers={"X-Export-Token": token, "Content-Type": "application/json"},
+            json={"account_ids": [selected_outlook_id, selected_imap_id]},
+        )
+        self.assertEqual(export_resp.status_code, 200)
+
+        body = export_resp.get_data(as_text=True)
+        self.assertIn("格式版本：v2", body)
+        self.assertIn(selected_outlook, body)
+        self.assertIn(selected_imap, body)
+        self.assertNotIn(unselected_email, body)
+        self.assertNotIn(tmp_email, body)
+        self.assertNotIn("# === 临时邮箱（自建）===", body)
+        self.assertEqual(self._parse_header_total(body), 2)
+        self.assertTrue(body.endswith("\n"))
+
 
 if __name__ == "__main__":
     unittest.main()

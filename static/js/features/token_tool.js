@@ -15,9 +15,12 @@ const SCOPE_PRESETS = {
     imap: ['offline_access', 'https://outlook.office.com/IMAP.AccessAsUser.All'],
 };
 const DEFAULT_COMPAT_SCOPE = SCOPE_PRESETS.graph.join(' ');
+const OAUTH_CALLBACK_MESSAGE_TYPE = 'token-tool-oauth-callback';
 
 let scopeTokens = ['offline_access', 'https://graph.microsoft.com/.default'];
 let currentTokenResult = null;
+let oauthPopupWindow = null;
+let autoExchangeInFlight = false;
 
 async function tokenToolFetch(url, options = {}) {
     const headers = {
@@ -258,8 +261,13 @@ async function startOAuth() {
     if (panel) {
         panel.classList.remove('hidden');
     }
-    document.getElementById('manual-exchange').open = true;
-    showStatus(t('授权链接已生成，请复制并在浏览器中打开'), 'success');
+    if (!openAuthorizePopup(authorizeUrl)) {
+        document.getElementById('manual-exchange').open = true;
+        showStatus('授权链接已生成，但浏览器阻止了弹窗。请点击“打开链接”继续，或手动复制授权链接。', 'info');
+        return;
+    }
+
+    showStatus('授权窗口已打开，完成登录后将自动回到本页并换取 Token。', 'success');
 }
 
 function copyAuthorizeLink() {
@@ -277,7 +285,52 @@ function openAuthorizeLink() {
         showStatus(t('没有可打开的授权链接'), 'error');
         return;
     }
-    window.open(linkInput.value, '_blank');
+    if (!openAuthorizePopup(linkInput.value)) {
+        showStatus('无法自动打开授权窗口，请检查浏览器弹窗设置后重试。', 'error');
+    }
+}
+
+function openAuthorizePopup(url) {
+    oauthPopupWindow = window.open(url, 'token-tool-oauth', 'popup=yes,width=560,height=760');
+    if (!oauthPopupWindow) {
+        return false;
+    }
+    if (typeof oauthPopupWindow.focus === 'function') {
+        oauthPopupWindow.focus();
+    }
+    return true;
+}
+
+function getConfiguredRedirectOrigin() {
+    const redirectUri = document.getElementById('redirectUri')?.value.trim() || '';
+    if (!redirectUri) {
+        return '';
+    }
+    try {
+        return new URL(redirectUri).origin;
+    } catch (_err) {
+        return '';
+    }
+}
+
+function isTrustedOAuthCallbackMessage(message, origin) {
+    const callbackUrl = String(message?.callback_url || '').trim();
+    if (!callbackUrl) {
+        return false;
+    }
+    try {
+        const parsed = new URL(callbackUrl);
+        if (parsed.origin !== origin) {
+            return false;
+        }
+        if (!parsed.pathname.endsWith('/token-tool/callback')) {
+            return false;
+        }
+        const configuredOrigin = getConfiguredRedirectOrigin();
+        return !configuredOrigin || configuredOrigin === parsed.origin;
+    } catch (_err) {
+        return false;
+    }
 }
 
 function fillResultField(id, value) {
@@ -311,22 +364,66 @@ function getCurrentTokenResult() {
 }
 
 async function exchangeToken() {
-    clearStatus();
     const callbackUrl = document.getElementById('callbackUrl')?.value.trim() || '';
+    await exchangeTokenWithCallbackUrl(callbackUrl, { auto: false });
+}
+
+async function exchangeTokenWithCallbackUrl(callbackUrl, { auto = false } = {}) {
+    clearStatus();
     if (!callbackUrl) {
         showStatus(t('请粘贴回调 URL'), 'error');
         return;
+    }
+    if (auto && autoExchangeInFlight) {
+        return;
+    }
+    if (auto) {
+        autoExchangeInFlight = true;
+        showStatus('已收到授权回调，正在自动换取 Token...', 'info');
+    }
+    const callbackInput = document.getElementById('callbackUrl');
+    if (callbackInput) {
+        callbackInput.value = callbackUrl;
     }
 
     const data = await tokenToolFetch('/api/token-tool/exchange', {
         method: 'POST',
         body: JSON.stringify({ callback_url: callbackUrl }),
     });
+    if (auto) {
+        autoExchangeInFlight = false;
+    }
     if (!data.success) {
+        document.getElementById('manual-exchange').open = true;
         showStatus(data.error?.message || t('换取 Token 失败'), 'error', data.error?.details || '');
         return;
     }
     renderTokenResult(data.data || {});
+}
+
+function handleOAuthCallbackMessage(event) {
+    const message = event.data || {};
+    if (message.type !== OAUTH_CALLBACK_MESSAGE_TYPE) {
+        return;
+    }
+    if (!isTrustedOAuthCallbackMessage(message, event.origin)) {
+        showStatus('已收到授权回调消息，但来源与当前 Redirect URI 不一致。请检查是否混用了 localhost、127.0.0.1 或不同域名。', 'error');
+        document.getElementById('manual-exchange').open = true;
+        return;
+    }
+
+    const callbackInput = document.getElementById('callbackUrl');
+    if (callbackInput) {
+        callbackInput.value = message.callback_url || '';
+    }
+
+    if (message.success) {
+        exchangeTokenWithCallbackUrl(message.callback_url || '', { auto: true });
+        return;
+    }
+
+    document.getElementById('manual-exchange').open = true;
+    showStatus(message.message || 'Microsoft 授权未完成', 'error', message.guidance || message.error_description || '');
 }
 
 async function saveConfig() {
@@ -464,6 +561,7 @@ async function confirmSaveToAccount() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('message', handleOAuthCallbackMessage);
     document.getElementById('scopeChips')?.addEventListener('click', handleScopeChipClick);
     document.getElementById('redirectUri').value = buildDefaultRedirectUri();
     renderScopeChips(SCOPE_PRESETS.graph.join(' '));

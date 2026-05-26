@@ -107,6 +107,7 @@ def start_oauth_flow(oauth_config: Dict[str, Any]) -> Tuple[Optional[str], str]:
             "scope": normalized_scope,
             "tenant": tenant,
             "verifier": verifier,
+            "opener_origin": oauth_config.get("opener_origin", ""),
         },
     )
 

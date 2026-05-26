@@ -91,6 +91,7 @@ def prepare_oauth() -> Any:
         "scope": (data.get("scope") or "").strip(),
         "tenant": COMPATIBLE_TENANT,
         "prompt_consent": bool(data.get("prompt_consent")),
+        "opener_origin": request.host_url.rstrip("/"),
     }
 
     authorize_url, state_or_error = oauth_tool_service.start_oauth_flow(oauth_config)
@@ -103,6 +104,9 @@ def prepare_oauth() -> Any:
 
 def handle_callback() -> Any:
     _ensure_oauth_tool_enabled()
+    state = request.args.get("state", "")
+    flow_data = oauth_tool_service.get_oauth_flow(state) if state else None
+    opener_origin = (flow_data or {}).get("opener_origin", "")
     error = request.args.get("error")
     error_description = request.args.get("error_description", "")
 
@@ -114,10 +118,10 @@ def handle_callback() -> Any:
             error_code=error,
             error_description=error_description,
             guidance=guidance,
+            opener_origin=opener_origin,
         )
 
     code = request.args.get("code")
-    state = request.args.get("state")
     if not code or not state:
         return render_template(
             "popup_result.html",
@@ -125,9 +129,10 @@ def handle_callback() -> Any:
             error_code="missing_params",
             error_description="回调缺少 code 或 state 参数",
             guidance="请重新点击『登录 Microsoft』",
+            opener_origin=opener_origin,
         )
 
-    return render_template("popup_result.html", error=False)
+    return render_template("popup_result.html", error=False, opener_origin=opener_origin)
 
 
 @login_required

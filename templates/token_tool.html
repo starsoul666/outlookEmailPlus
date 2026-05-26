@@ -70,7 +70,7 @@
                         <p>在「身份验证」页面添加一个「Web」平台的重定向 URI，填入本工具页面的回调地址。</p>
                         <ul>
                             <li>本地部署：<code>http://localhost:5001/token-tool/callback</code>（端口号根据实际调整）</li>
-                            <li>Docker/远程部署：可填 <code>http://localhost</code>，授权后手动复制地址栏 URL 粘贴回本工具</li>
+                            <li>Docker/远程部署：优先填写当前站点的 <code>/token-tool/callback</code> 完整地址；如浏览器环境受限，仍可退回手动复制回调 URL 的兜底流程</li>
                         </ul>
                     </div>
                 </div>
@@ -128,7 +128,7 @@
                 </label>
                 <div class="token-button-row">
                     <button type="button" class="btn-inline" onclick="saveConfig()">保存配置</button>
-                    <button type="button" class="btn-inline primary" onclick="startOAuth()">获取授权链接</button>
+                    <button type="button" class="btn-inline primary" onclick="startOAuth()">开始授权</button>
                 </div>
             </div>
         </section>
@@ -142,12 +142,12 @@
                     <button type="button" class="btn-inline" onclick="copyAuthorizeLink()">复制链接</button>
                     <button type="button" class="btn-inline" onclick="openAuthorizeLink()">打开链接</button>
                 </div>
-                <small class="token-field-hint">授权完成后，浏览器会跳转到回调地址。请将地址栏中的完整 URL 复制并粘贴到下方「换取 Token」区域。</small>
+                <small class="token-field-hint">正常情况下，授权完成后会自动回到本页并自动换取 Token。若弹窗被拦截或自动回调失败，可使用下方手动兜底流程。</small>
             </div>
         </section>
 
         <details id="manual-exchange" class="token-card token-details">
-            <summary>③ 换取 Token</summary>
+            <summary>③ 手动换取 Token（兜底）</summary>
             <div class="token-details-body">
                 <label class="token-field token-field-full">
                     <span>回调 URL</span>

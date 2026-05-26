@@ -715,8 +715,14 @@
 
         // 显示导出邮箱模态框
         async function showExportModal() {
-            document.getElementById('exportModal').classList.add('show');
-            await loadExportGroupList();
+            if (selectedAccountIds.size > 0) {
+                pendingExportMode = 'selected_accounts';
+                pendingExportAccountIds = Array.from(selectedAccountIds);
+            } else {
+                pendingExportMode = 'all';
+                pendingExportAccountIds = [];
+            }
+            showExportVerifyModal();
         }
 
         // 隐藏导出邮箱模态框
@@ -763,6 +769,8 @@
 
         // 存储待导出的分组ID
         let pendingExportGroupIds = [];
+        let pendingExportMode = 'all';
+        let pendingExportAccountIds = [];
 
         // 导出选中的分组
         async function exportSelectedGroups() {
@@ -775,7 +783,9 @@
             }
 
             // 保存待导出的分组ID
+            pendingExportMode = 'selected_groups';
             pendingExportGroupIds = groupIds;
+            pendingExportAccountIds = [];
 
             // 显示密码确认对话框
             hideExportModal();
@@ -824,17 +834,37 @@
 
                 const verifyToken = verifyData.verify_token;
 
-                // 执行导出（使用请求头传递 token，避免 URL/日志泄露）
-                const response = await fetch('/api/accounts/export-selected', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Export-Token': verifyToken
-                    },
-                    body: JSON.stringify({
-                        group_ids: pendingExportGroupIds
-                    })
-                });
+                let response;
+                if (pendingExportMode === 'selected_accounts') {
+                    response = await fetch('/api/accounts/export-selected', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Export-Token': verifyToken
+                        },
+                        body: JSON.stringify({
+                            account_ids: pendingExportAccountIds
+                        })
+                    });
+                } else if (pendingExportMode === 'selected_groups') {
+                    response = await fetch('/api/accounts/export-selected', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Export-Token': verifyToken
+                        },
+                        body: JSON.stringify({
+                            group_ids: pendingExportGroupIds
+                        })
+                    });
+                } else {
+                    response = await fetch('/api/accounts/export', {
+                        method: 'GET',
+                        headers: {
+                            'X-Export-Token': verifyToken
+                        }
+                    });
+                }
 
                 if (response.ok) {
                     // 获取文件名
@@ -871,4 +901,3 @@
                 showToast(translateAppTextLocal('导出失败'), 'error');
             }
         }
-

@@ -1089,6 +1089,55 @@ class OAuthToolApiBlueprintTests(OAuthToolTestBase):
             self.assertEqual(resp.status_code, 404)
 
 
+class OAuthToolCallbackPageTests(OAuthToolTestBase):
+    def test_callback_success_page_uses_prepare_request_origin_for_post_message(self):
+        from outlook_web.services import oauth_tool as oauth_tool_service
+
+        with self.app.test_client() as client:
+            state = "origin-state-" + uuid.uuid4().hex
+            oauth_tool_service.store_oauth_flow(
+                state,
+                {
+                    "opener_origin": "http://127.0.0.1:5000",
+                    "redirect_uri": "http://localhost:5000/token-tool/callback",
+                    "client_id": "cid",
+                    "scope": "offline_access https://graph.microsoft.com/.default",
+                    "verifier": "test-verifier",
+                },
+            )
+            resp = client.get(
+                f"/token-tool/callback?code=mock-code&state={state}",
+                base_url="http://localhost:5000",
+            )
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+            self.assertIn('const openerOrigin = "http://127.0.0.1:5000";', html)
+
+    def test_callback_success_page_posts_message_to_opener(self):
+        with self.app.test_client() as client:
+            resp = client.get("/token-tool/callback?code=mock-code&state=mock-state")
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+            self.assertIn("token-tool-oauth-callback", html)
+            self.assertIn("window.opener.postMessage", html)
+            self.assertIn("window.location.href", html)
+            self.assertIn("callback_url: window.location.href", html)
+            self.assertIn("自动换取 Token", html)
+
+    def test_callback_error_page_posts_error_to_opener(self):
+        with self.app.test_client() as client:
+            resp = client.get(
+                "/token-tool/callback?error=access_denied&error_description=user%20cancelled"
+            )
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+            self.assertIn("token-tool-oauth-callback", html)
+            self.assertIn("success: false", html)
+            self.assertIn("callback_url: window.location.href", html)
+            self.assertIn("Microsoft 授权未完成", html)
+            self.assertIn("user cancelled", html)
+
+
 class OAuthToolApiAccountListTests(OAuthToolTestBase):
     def test_accounts_list_returns_non_sensitive_fields(self):
         self._insert_test_account(email="list-test@oauth-test.com")

@@ -2130,7 +2130,7 @@ def api_export_all_accounts() -> Any:
 
 @login_required
 def api_export_selected_accounts() -> Any:
-    """导出选中分组的邮箱账号为 TXT 文件（需要二次验证）"""
+    """导出选中分组或选中账号的邮箱账号为 TXT 文件（需要二次验证）"""
     from outlook_web.security.auth import (
         consume_export_verify_token,
         get_client_ip,
@@ -2138,6 +2138,7 @@ def api_export_selected_accounts() -> Any:
     )
 
     data = request.json or {}
+    account_ids = data.get("account_ids", [])
     group_ids = data.get("group_ids", [])
     verify_token = request.headers.get("X-Export-Token") or data.get("verify_token")
     client_ip = get_client_ip()
@@ -2147,44 +2148,72 @@ def api_export_selected_accounts() -> Any:
     if not ok:
         return build_export_verify_failure_response(error_message)
 
-    if not group_ids:
-        return build_error_response(
-            "GROUP_IDS_REQUIRED",
-            "请选择要导出的分组",
-            message_en="Please select at least one group to export",
+    if isinstance(account_ids, list) and account_ids:
+        try:
+            parsed_account_ids = [int(account_id) for account_id in account_ids]
+        except (TypeError, ValueError):
+            return build_error_response(
+                "ACCOUNT_IDS_INVALID",
+                "account_ids 必须为整数列表",
+                message_en="account_ids must be a list of integers",
+            )
+
+        all_accounts = accounts_repo.load_accounts_by_ids(parsed_account_ids)
+        if not all_accounts:
+            return build_error_response(
+                "ACCOUNT_EXPORT_EMPTY",
+                "选中的账号不存在或已被删除",
+                message_en="Selected accounts were not found",
+                status=404,
+            )
+
+        log_audit(
+            "export",
+            "selected_accounts",
+            ",".join(map(str, parsed_account_ids)),
+            f"导出勾选账号，共 {len(all_accounts)} 个账号",
         )
 
-    # 获取选中分组下的所有账号（使用 load_accounts 自动解密）
-    all_accounts = []
-    for group_id in group_ids:
-        accounts = accounts_repo.load_accounts(group_id)
-        all_accounts.extend(accounts)
+        content = _build_export_text(all_accounts)
+    else:
+        if not group_ids:
+            return build_error_response(
+                "GROUP_IDS_REQUIRED",
+                "请选择要导出的分组",
+                message_en="Please select at least one group to export",
+            )
 
-    # 仅当选中了"临时邮箱"系统分组时才附加临时邮箱
-    from outlook_web.repositories import temp_emails as temp_emails_repo
+        # 获取选中分组下的所有账号（使用 load_accounts 自动解密）
+        all_accounts = []
+        for group_id in group_ids:
+            accounts = accounts_repo.load_accounts(group_id)
+            all_accounts.extend(accounts)
 
-    temp_emails: List[Dict] = []
-    temp_group = groups_repo.get_group_by_name("临时邮箱")
-    if temp_group and temp_group["id"] in group_ids:
-        temp_emails = temp_emails_repo.load_temp_emails()
+        # 仅当选中了"临时邮箱"系统分组时才附加临时邮箱
+        from outlook_web.repositories import temp_emails as temp_emails_repo
 
-    if not all_accounts and not temp_emails:
-        return build_error_response(
-            "ACCOUNT_EXPORT_EMPTY",
-            "选中的分组下没有邮箱账号",
-            message_en="No mail accounts were found in the selected groups",
-            status=404,
+        temp_emails: List[Dict] = []
+        temp_group = groups_repo.get_group_by_name("临时邮箱")
+        if temp_group and temp_group["id"] in group_ids:
+            temp_emails = temp_emails_repo.load_temp_emails()
+
+        if not all_accounts and not temp_emails:
+            return build_error_response(
+                "ACCOUNT_EXPORT_EMPTY",
+                "选中的分组下没有邮箱账号",
+                message_en="No mail accounts were found in the selected groups",
+                status=404,
+            )
+
+        # 记录审计日志
+        log_audit(
+            "export",
+            "selected_groups",
+            ",".join(map(str, group_ids)),
+            f"导出选中分组的 {len(all_accounts)} 个账号 + {len(temp_emails)} 个临时邮箱",
         )
 
-    # 记录审计日志
-    log_audit(
-        "export",
-        "selected_groups",
-        ",".join(map(str, group_ids)),
-        f"导出选中分组的 {len(all_accounts)} 个账号 + {len(temp_emails)} 个临时邮箱",
-    )
-
-    content = _build_export_text(all_accounts, temp_emails)
+        content = _build_export_text(all_accounts, temp_emails)
 
     # 生成文件名
     filename = f"accounts_export_selected_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"

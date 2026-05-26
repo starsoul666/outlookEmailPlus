@@ -19,23 +19,77 @@
         <p><strong>{{ error_code }}</strong></p>
         <p>{{ error_description }}</p>
         <p class="guidance">💡 {{ guidance }}</p>
+        <p id="notify-tip" class="guidance">如主页面仍未提示错误，请手动返回 Token 工具重试。</p>
         <button class="btn btn-secondary" onclick="window.close()">关闭</button>
     </div>
     {% else %}
     <div class="card">
         <h2>✅ 授权成功</h2>
-        <p>请复制当前地址栏的完整 URL，粘贴到 Token 工具页面的「手动换取」区域</p>
-        <button class="btn btn-primary" onclick="copyCurrentUrl()">📋 复制回调地址</button>
+        <p id="success-tip">正在返回 Token 工具并自动换取 Token...</p>
+        <button id="copy-button" class="btn btn-primary" onclick="copyCurrentUrl()" style="display:none;">📋 复制回调地址</button>
         <button class="btn btn-secondary" onclick="window.close()">关闭</button>
         <p id="copy-tip" style="display:none; color:green; margin-top:8px;">✓ 已复制</p>
     </div>
     {% endif %}
 
     <script>
+    const openerOrigin = {{ opener_origin | default('', true) | tojson }};
+    const popupPayload = {% if error %}{
+        type: 'token-tool-oauth-callback',
+        success: false,
+        message: 'Microsoft 授权未完成',
+        callback_url: window.location.href,
+        error_code: {{ error_code | tojson }},
+        error_description: {{ error_description | tojson }},
+        guidance: {{ guidance | tojson }}
+    }{% else %}{
+        type: 'token-tool-oauth-callback',
+        success: true,
+        callback_url: window.location.href
+    }{% endif %};
+
+    function notifyOpener() {
+        if (!window.opener || window.opener.closed) {
+            return false;
+        }
+        try {
+            window.opener.postMessage(popupPayload, openerOrigin || '*');
+            return true;
+        } catch (err) {
+            return false;
+        }
+    }
+
     function copyCurrentUrl() {
         navigator.clipboard.writeText(window.location.href).then(function() {
             document.getElementById('copy-tip').style.display = 'block';
         });
+    }
+
+    const openerNotified = notifyOpener();
+    if (popupPayload.success) {
+        const tip = document.getElementById('success-tip');
+        const copyButton = document.getElementById('copy-button');
+        if (openerNotified) {
+            if (tip) {
+                tip.textContent = '已通知 Token 工具，窗口将自动关闭。';
+            }
+            window.setTimeout(function() {
+                window.close();
+            }, 600);
+        } else {
+            if (tip) {
+                tip.textContent = '未检测到 Token 工具页面，请复制当前地址栏 URL，粘贴回手动换取区域。';
+            }
+            if (copyButton) {
+                copyButton.style.display = 'inline-block';
+            }
+        }
+    } else if (openerNotified) {
+        const notifyTip = document.getElementById('notify-tip');
+        if (notifyTip) {
+            notifyTip.textContent = '错误信息已同步到 Token 工具页面。';
+        }
     }
     </script>
 </body>

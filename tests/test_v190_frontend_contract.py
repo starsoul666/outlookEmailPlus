@@ -285,6 +285,19 @@ class V190FrontendContractTests(unittest.TestCase):
         self.assertIn("translateAppTextLocal('【错误详情】')", main_js)
         self.assertIn("translateAppTextLocal('【技术堆栈/细节】')", main_js)
 
+    def test_export_entry_uses_checked_accounts_first_and_falls_back_to_export_all(self):
+        client = self.app.test_client()
+        accounts_js = self._get_text(client, "/static/js/features/accounts.js")
+
+        self.assertIn("let pendingExportMode = 'all';", accounts_js)
+        self.assertIn("let pendingExportAccountIds = [];", accounts_js)
+        self.assertIn("if (selectedAccountIds.size > 0)", accounts_js)
+        self.assertIn("pendingExportMode = 'selected_accounts';", accounts_js)
+        self.assertIn("pendingExportAccountIds = Array.from(selectedAccountIds);", accounts_js)
+        self.assertIn("fetch('/api/accounts/export', {", accounts_js)
+        self.assertIn("fetch('/api/accounts/export-selected', {", accounts_js)
+        self.assertIn("account_ids: pendingExportAccountIds", accounts_js)
+
     def test_frontend_polling_settings_preserve_zero_value(self):
         client = self.app.test_client()
         self._login(client)

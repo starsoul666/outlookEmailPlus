@@ -130,6 +130,39 @@ def load_accounts(group_id: int = None) -> List[Dict]:
     return _hydrate_accounts(rows, db)
 
 
+def load_accounts_by_ids(account_ids: List[int]) -> List[Dict]:
+    """按给定 ID 列表加载邮箱账号，并保持传入顺序。"""
+    normalized_ids = [int(account_id) for account_id in account_ids if int(account_id) > 0]
+    if not normalized_ids:
+        return []
+
+    db = get_db()
+    placeholders = ",".join(["?"] * len(normalized_ids))
+    cursor = db.execute(
+        f"""
+        SELECT a.*, g.name as group_name, g.color as group_color
+        FROM accounts a
+        LEFT JOIN groups g ON a.group_id = g.id
+        WHERE a.id IN ({placeholders})
+        """,
+        normalized_ids,
+    )
+    hydrated_accounts = _hydrate_accounts(cursor.fetchall(), db)
+    account_by_id = {}
+    for account in hydrated_accounts:
+        try:
+            account_by_id[int(account.get("id"))] = account
+        except Exception:
+            continue
+
+    ordered_accounts: List[Dict] = []
+    for account_id in normalized_ids:
+        account = account_by_id.get(account_id)
+        if account:
+            ordered_accounts.append(account)
+    return ordered_accounts
+
+
 def _build_account_list_where(
     *,
     group_id: Optional[int],
