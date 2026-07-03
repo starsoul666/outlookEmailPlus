@@ -11,6 +11,11 @@ def create_blueprint() -> Blueprint:
     bp = Blueprint("system", __name__)
     bp.add_url_rule("/healthz", view_func=system_controller.healthz, methods=["GET"])
     bp.add_url_rule(
+        "/api/bootstrap",
+        view_func=system_controller.api_bootstrap,
+        methods=["GET"],
+    )
+    bp.add_url_rule(
         "/api/system/health",
         view_func=system_controller.api_system_health,
         methods=["GET"],

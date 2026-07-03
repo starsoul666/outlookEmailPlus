@@ -704,12 +704,12 @@
                     } else if (typeof DOMPurify !== 'undefined') {
                         // 使用 DOMPurify 净化 HTML 内容，防止 XSS 攻击
                         sanitizedBody = DOMPurify.sanitize(renderableBody, {
-                            ALLOWED_TAGS: ['a', 'b', 'i', 'u', 'strong', 'em', 'p', 'br', 'div', 'span', 'img', 'table', 'tr', 'td', 'th', 'thead', 'tbody', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code'],
+                            ALLOWED_TAGS: ['a', 'b', 'i', 'u', 'strong', 'em', 'p', 'br', 'div', 'span', 'img', 'table', 'tr', 'td', 'th', 'thead', 'tbody', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'style'],
                             ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'style', 'class', 'width', 'height', 'align', 'border', 'cellpadding', 'cellspacing'],
                             ALLOW_DATA_ATTR: false,
                             ADD_DATA_URI_TAGS: ['img'],
                             ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|cid):|data:image\/(?:png|gif|jpe?g|webp|bmp|x-icon|vnd\.microsoft\.icon|avif);base64,|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
-                            FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+                            FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
                             FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur']
                         });
                     } else {

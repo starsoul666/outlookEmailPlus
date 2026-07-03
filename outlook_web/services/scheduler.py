@@ -208,6 +208,9 @@ def _configure_pool_maintenance_jobs(scheduler) -> None:
                 expired = pool_repo.expire_stale_claims(conn)
                 if expired:
                     print(f"[pool] 过期 claims 回收：{expired} 条")
+                expired_temp = pool_repo.expire_stale_temp_claims(conn)
+                if expired_temp:
+                    print(f"[pool] 过期临时邮箱 claims 回收：{expired_temp} 条")
             finally:
                 conn.close()
         except Exception:
@@ -225,6 +228,9 @@ def _configure_pool_maintenance_jobs(scheduler) -> None:
                 recovered = pool_repo.recover_cooldown(conn, cooldown_seconds)
                 if recovered:
                     print(f"[pool] cooldown 恢复：{recovered} 条")
+                recovered_temp = pool_repo.recover_cooldown_temp(conn, cooldown_seconds)
+                if recovered_temp:
+                    print(f"[pool] 临时邮箱 cooldown 恢复：{recovered_temp} 条")
             finally:
                 conn.close()
         except Exception:

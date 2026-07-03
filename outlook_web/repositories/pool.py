@@ -28,6 +28,29 @@ RESULT_TO_POOL_STATUS: Dict[str, str] = {
     "network_error": "available",
 }
 
+# 临时邮箱（temp_emails 表）接入邮箱池后，其领取返回的 account_id 需要与 accounts 表
+# 的自增 id 区分开——两张表各自自增会撞号。这里对 temp_emails.id 加一个大数偏移作为
+# 对外 account_id；claim-release / claim-complete 通过该偏移判定应操作哪张表。
+TEMP_POOL_ID_OFFSET = 1_000_000_000
+
+
+def is_temp_pool_account_id(account_id: int) -> bool:
+    """判断对外 account_id 是否指向 temp_emails 表（而非 accounts 表）。"""
+    try:
+        return int(account_id) >= TEMP_POOL_ID_OFFSET
+    except (TypeError, ValueError):
+        return False
+
+
+def temp_id_from_account_id(account_id: int) -> int:
+    """将对外 account_id 还原为 temp_emails.id。"""
+    return int(account_id) - TEMP_POOL_ID_OFFSET
+
+
+def account_id_from_temp_id(temp_id: int) -> int:
+    """将 temp_emails.id 映射为对外 account_id。"""
+    return int(temp_id) + TEMP_POOL_ID_OFFSET
+
 
 class PoolRepositoryError(Exception):
     """Repository 层业务错误，包含错误码。"""
@@ -328,14 +351,36 @@ def get_claim_context(
         """,
         (claim_token,),
     ).fetchone()
-    if row is None:
+    if row is not None:
+        return {
+            "account_id": row["id"],
+            "email": row["email"],
+            "claimed_at": row["claimed_at"] or "",
+            "email_domain": row["email_domain"] or "",
+            "pool_status": row["pool_status"] or "",
+        }
+
+    # 临时邮箱池账号：claim_token 命中 temp_emails 时返回偏移后的 account_id
+    temp_row = conn.execute(
+        """
+        SELECT id, email, domain, claimed_at, pool_status
+        FROM temp_emails
+        WHERE claim_token = ?
+        """,
+        (claim_token,),
+    ).fetchone()
+    if temp_row is None:
         return None
+    email_addr = str(temp_row["email"] or "")
+    email_domain = temp_row["domain"] or ""
+    if not email_domain and "@" in email_addr:
+        email_domain = email_addr.split("@", 1)[1]
     return {
-        "account_id": row["id"],
-        "email": row["email"],
-        "claimed_at": row["claimed_at"] or "",
-        "email_domain": row["email_domain"] or "",
-        "pool_status": row["pool_status"] or "",
+        "account_id": account_id_from_temp_id(temp_row["id"]),
+        "email": email_addr,
+        "claimed_at": temp_row["claimed_at"] or "",
+        "email_domain": email_domain or "",
+        "pool_status": temp_row["pool_status"] or "",
     }
 
 
@@ -573,10 +618,6 @@ def recover_cooldown(conn: sqlite3.Connection, cooldown_seconds: int) -> int:
 
 
 def get_stats(conn: sqlite3.Connection) -> dict:
-    rows = conn.execute("""
-        SELECT pool_status, COUNT(*) as cnt FROM accounts
-        GROUP BY pool_status
-        """).fetchall()
     pool_counts: dict = {
         "available": 0,
         "claimed": 0,
@@ -585,10 +626,227 @@ def get_stats(conn: sqlite3.Connection) -> dict:
         "frozen": 0,
         "retired": 0,
     }
+    rows = conn.execute("""
+        SELECT pool_status, COUNT(*) as cnt FROM accounts
+        GROUP BY pool_status
+        """).fetchall()
     for row in rows:
         # external API 只暴露池内状态；NULL/池外账号不应出现在契约里。
         key = row["pool_status"]
         if key in pool_counts:
             pool_counts[key] = row["cnt"]
 
+    # 临时邮箱池：所有 active 临时邮箱均视为可领取，未领取（pool_status 为 NULL）计入 available
+    temp_rows = conn.execute(f"""
+        SELECT pool_status, COUNT(*) as cnt FROM temp_emails
+        WHERE status = 'active' AND mailbox_type = '{_TEMP_POOL_MAILBOX_TYPE}'
+        GROUP BY pool_status
+        """).fetchall()
+    for row in temp_rows:
+        key = row["pool_status"] or "available"
+        if key in pool_counts:
+            pool_counts[key] += row["cnt"]
+
     return {"pool_counts": pool_counts}
+
+
+# ============================================================================
+# 临时邮箱池（temp_emails 表）领取/释放/完成 —— 与 accounts 池共用状态机语义
+#
+# 设计要点：
+#   - 所有 active 的用户临时邮箱自动进池，pool_status 为 NULL 或 'available' 即可领取
+#   - 领取返回的 account_id 通过 TEMP_POOL_ID_OFFSET 偏移，读信链路已由 mailbox_resolver
+#     按邮箱地址统一路由到 TempMailService，故无需改动读信逻辑
+#   - 临时邮箱为一次性资源，不参与项目维度复用；complete 直接套用 RESULT_TO_POOL_STATUS
+#   - account_claim_logs.account_id 对 accounts 有外键约束，临时邮箱不写该表以避免约束冲突
+# ============================================================================
+
+_TEMP_POOL_MAILBOX_TYPE = "user"
+
+
+def claim_temp_mailbox_atomic(
+    conn: sqlite3.Connection,
+    *,
+    caller_id: str,
+    task_id: str,
+    lease_seconds: int,
+    email_domain: Optional[str] = None,
+) -> Optional[dict]:
+    """从 temp_emails 表原子领取一个可用临时邮箱，返回与 claim_atomic 一致结构的 dict 或 None。"""
+    sql = f"""
+        SELECT * FROM temp_emails
+        WHERE status = 'active'
+          AND mailbox_type = '{_TEMP_POOL_MAILBOX_TYPE}'
+          AND (pool_status IS NULL OR pool_status = 'available')
+    """
+    params: list = []
+    if email_domain:
+        # 兼容 domain 为空的历史行：回退用 email 的 @ 后缀派生域名匹配
+        sql += " AND lower(COALESCE(NULLIF(domain, '')," " substr(email, instr(email, '@') + 1))) = ?"
+        params.append(email_domain.strip().lower())
+    sql += " ORDER BY RANDOM() LIMIT 1"
+
+    conn.execute("BEGIN IMMEDIATE")
+    mailbox = conn.execute(sql, params).fetchone()
+    if mailbox is None:
+        conn.execute("ROLLBACK")
+        return None
+
+    now_str = _utcnow().isoformat() + "Z"
+    lease_expires_at_str = (_utcnow() + timedelta(seconds=lease_seconds)).isoformat() + "Z"
+    token = "clm_" + secrets.token_urlsafe(9)
+
+    conn.execute(
+        """
+        UPDATE temp_emails SET
+            pool_status = 'claimed',
+            claimed_by = ?,
+            claimed_at = ?,
+            lease_expires_at = ?,
+            claim_token = ?,
+            last_claimed_at = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            f"{caller_id}:{task_id}",
+            now_str,
+            lease_expires_at_str,
+            token,
+            now_str,
+            now_str,
+            mailbox["id"],
+        ),
+    )
+    conn.execute("COMMIT")
+
+    email_addr = str(mailbox["email"] or "")
+    email_domain_val = mailbox["domain"] or ""
+    if not email_domain_val and "@" in email_addr:
+        email_domain_val = email_addr.split("@", 1)[1]
+
+    logger.info(
+        "[pool] 领取临时邮箱: %s (temp_id=%s, account_id=%s)",
+        email_addr,
+        mailbox["id"],
+        account_id_from_temp_id(mailbox["id"]),
+    )
+
+    return {
+        "id": account_id_from_temp_id(mailbox["id"]),
+        "email": email_addr,
+        "email_domain": email_domain_val,
+        "provider": str(mailbox["source"] or "custom_domain_temp_mail"),
+        "account_type": "temp_mail",
+        "pool_status": "claimed",
+        "claim_token": token,
+        "claimed_at": now_str,
+        "lease_expires_at": lease_expires_at_str,
+    }
+
+
+def get_temp_mailbox_pool_row(conn: sqlite3.Connection, temp_id: int) -> Optional[dict]:
+    """按 temp_emails.id 读取池相关字段（供 Service 层做 claim_token / caller 校验）。"""
+    row = conn.execute(
+        """
+        SELECT id, email, claim_token, claimed_by, pool_status
+        FROM temp_emails
+        WHERE id = ?
+        """,
+        (temp_id,),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def release_temp_mailbox(
+    conn: sqlite3.Connection,
+    temp_id: int,
+    claim_token: str,
+    caller_id: str,
+    task_id: str,
+    reason: Optional[str],
+) -> None:
+    """释放已领取的临时邮箱，恢复为 available。"""
+    now_str = _utcnow().isoformat() + "Z"
+    conn.execute("BEGIN IMMEDIATE")
+    conn.execute(
+        """
+        UPDATE temp_emails SET
+            pool_status = 'available',
+            claimed_by = NULL,
+            claimed_at = NULL,
+            lease_expires_at = NULL,
+            claim_token = NULL,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (now_str, temp_id),
+    )
+    conn.execute("COMMIT")
+
+
+def complete_temp_mailbox(
+    conn: sqlite3.Connection,
+    temp_id: int,
+    claim_token: str,
+    caller_id: str,
+    task_id: str,
+    result: str,
+    detail: Optional[str],
+) -> str:
+    """完成临时邮箱领取流程。临时邮箱为一次性资源，直接套用 RESULT_TO_POOL_STATUS。"""
+    new_pool_status = RESULT_TO_POOL_STATUS[result]
+    now_str = _utcnow().isoformat() + "Z"
+    conn.execute("BEGIN IMMEDIATE")
+    conn.execute(
+        """
+        UPDATE temp_emails SET
+            pool_status = ?,
+            claimed_by = NULL,
+            claimed_at = NULL,
+            lease_expires_at = NULL,
+            claim_token = NULL,
+            last_result = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (new_pool_status, result, now_str, temp_id),
+    )
+    conn.execute("COMMIT")
+    return new_pool_status
+
+
+def expire_stale_temp_claims(conn: sqlite3.Connection) -> int:
+    """回收租约到期仍处于 claimed 的临时邮箱 → cooldown。"""
+    now_str = _utcnow().isoformat() + "Z"
+    cursor = conn.execute(
+        """
+        UPDATE temp_emails SET
+            pool_status = 'cooldown',
+            claimed_by = NULL,
+            claimed_at = NULL,
+            lease_expires_at = NULL,
+            claim_token = NULL,
+            last_result = 'lease_expired',
+            updated_at = ?
+        WHERE pool_status = 'claimed' AND lease_expires_at < ?
+        """,
+        (now_str, now_str),
+    )
+    conn.commit()
+    return cursor.rowcount
+
+
+def recover_cooldown_temp(conn: sqlite3.Connection, cooldown_seconds: int) -> int:
+    """将冷却期结束的临时邮箱恢复为 available。"""
+    cutoff_str = (_utcnow() - timedelta(seconds=cooldown_seconds)).isoformat() + "Z"
+    now_str = _utcnow().isoformat() + "Z"
+    cursor = conn.execute(
+        """
+        UPDATE temp_emails SET pool_status = 'available', updated_at = ?
+        WHERE pool_status = 'cooldown' AND updated_at < ?
+        """,
+        (now_str, cutoff_str),
+    )
+    conn.commit()
+    return cursor.rowcount

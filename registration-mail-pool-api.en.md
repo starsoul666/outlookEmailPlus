@@ -298,6 +298,7 @@ Behavior:
 
 - `mode=sync`: block until a new matching message is found, then return the message summary
 - `mode=async`: return `probe_id` and HTTP `202`
+- For high-concurrency or bulk registration flows, prefer `mode=async`; sync mode holds a request thread until a match or timeout
 
 ### `GET /api/external/probe/{probe_id}`
 

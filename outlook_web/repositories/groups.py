@@ -260,6 +260,26 @@ def get_group_account_count(group_id: int) -> int:
     return row["count"] if row else 0
 
 
+def load_groups_with_account_count() -> List[Dict]:
+    """加载所有分组并附带各分组的邮箱数量（单次 SQL 聚合，消除 N+1）"""
+    db = get_db()
+    cursor = db.execute("""
+        SELECT g.*,
+               COALESCE(a.cnt, 0) AS account_count
+        FROM groups g
+        LEFT JOIN (
+            SELECT group_id, COUNT(*) AS cnt
+            FROM accounts
+            GROUP BY group_id
+        ) a ON a.group_id = g.id
+        ORDER BY
+            CASE WHEN g.name = '临时邮箱' THEN 0 ELSE 1 END,
+            g.id
+    """)
+    rows = cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
 def get_group_by_name(name: str) -> Optional[Dict]:
     """按名称查找分组（精确匹配，不区分大小写）"""
     db = get_db()

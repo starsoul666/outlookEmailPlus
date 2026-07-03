@@ -8,6 +8,14 @@ from outlook_web.controllers import emails as emails_controller
 def create_blueprint() -> Blueprint:
     """创建 emails Blueprint"""
     bp = Blueprint("emails", __name__)
+
+    # Issue #64（增强项 / Phase 3）：批量获取邮件（需放在动态路由前，避免 /api/emails/<email_addr> 抢占 /batch）
+    bp.add_url_rule(
+        "/api/emails/batch",
+        view_func=emails_controller.api_batch_get_emails,
+        methods=["POST"],
+    )
+
     bp.add_url_rule(
         "/api/emails/<email_addr>",
         view_func=emails_controller.api_get_emails,

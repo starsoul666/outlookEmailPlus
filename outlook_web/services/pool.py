@@ -32,7 +32,11 @@ VALID_RESULTS = set(pool_repo.RESULT_TO_POOL_STATUS.keys())
 CF_DELETE_ON_RESULTS = {"success", "credential_invalid"}
 
 # 支持的 provider 白名单（空字符串视为 None，不做校验）
-VALID_PROVIDERS = {"outlook", "imap", "custom", "cloudflare_temp_mail"}
+VALID_PROVIDERS = {"outlook", "imap", "custom", "gptmail", "cloudflare_temp_mail"}
+
+# 这些 provider（含未指定）在 accounts 池无命中时，回退到 temp_emails 临时邮箱池领取。
+# custom/gptmail 对应「通用 API (GPTMail)」临时邮箱；None 表示不限 provider。
+_TEMP_ELIGIBLE_PROVIDERS = {None, "custom", "gptmail"}
 
 
 def _validate_provider(provider: Optional[str]) -> Optional[str]:
@@ -182,6 +186,21 @@ def claim_random(
         if account is not None:
             return account
 
+        # accounts 池无命中：对临时邮箱类 provider（custom/gptmail/未指定）回退到 temp_emails 池领取
+        if provider in _TEMP_ELIGIBLE_PROVIDERS:
+            try:
+                temp_account = pool_repo.claim_temp_mailbox_atomic(
+                    conn,
+                    caller_id=caller_id,
+                    task_id=task_id,
+                    lease_seconds=default_lease,
+                    email_domain=email_domain,
+                )
+            except pool_repo.PoolRepositoryError as e:
+                raise PoolServiceError(str(e), e.error_code, http_status=500) from e
+            if temp_account is not None:
+                return temp_account
+
         # 池为空：仅当显式指定 provider=cloudflare_temp_mail 时，动态创建 CF 临时邮箱
         if provider == "cloudflare_temp_mail":
             created_email, created_meta = _create_cf_mailbox_for_pool(email_domain=email_domain)
@@ -213,6 +232,33 @@ def claim_random(
         conn.close()
 
 
+def _validate_claim_ownership(
+    row: Optional[dict],
+    *,
+    action: str,
+    claim_token: str,
+    caller_id: str,
+    task_id: str,
+) -> None:
+    """校验 release/complete 的领取归属（accounts 与 temp_emails 共用）。"""
+    if row is None:
+        raise PoolServiceError("账号不存在", "account_not_found", http_status=400)
+    if row.get("pool_status") != "claimed":
+        raise PoolServiceError(
+            f"账号当前状态为 '{row.get('pool_status')}'，无法 {action}",
+            "not_claimed",
+            http_status=409,
+        )
+    if row.get("claim_token") != claim_token:
+        raise PoolServiceError("claim_token 不匹配", "token_mismatch", http_status=403)
+    if row.get("claimed_by") != f"{caller_id}:{task_id}":
+        raise PoolServiceError(
+            "caller_id 或 task_id 与领取记录不一致",
+            "caller_mismatch",
+            http_status=403,
+        )
+
+
 def release_claim(
     *,
     account_id: int,
@@ -231,27 +277,27 @@ def release_claim(
 
     conn = create_sqlite_connection()
     try:
+        # 临时邮箱池账号：account_id 带偏移，路由到 temp_emails
+        if pool_repo.is_temp_pool_account_id(account_id):
+            temp_id = pool_repo.temp_id_from_account_id(account_id)
+            temp_row = pool_repo.get_temp_mailbox_pool_row(conn, temp_id)
+            _validate_claim_ownership(
+                temp_row, action="release", claim_token=claim_token, caller_id=caller_id, task_id=task_id
+            )
+            pool_repo.release_temp_mailbox(conn, temp_id, claim_token, caller_id, task_id, reason)
+            return
+
         row = conn.execute(
             "SELECT id, claim_token, claimed_by, pool_status FROM accounts WHERE id = ?",
             (account_id,),
         ).fetchone()
-        if row is None:
-            raise PoolServiceError("账号不存在", "account_not_found", http_status=400)
-        if row["pool_status"] != "claimed":
-            raise PoolServiceError(
-                f"账号当前状态为 '{row['pool_status']}'，无法 release",
-                "not_claimed",
-                http_status=409,
-            )
-        if row["claim_token"] != claim_token:
-            raise PoolServiceError("claim_token 不匹配", "token_mismatch", http_status=403)
-        expected_claimed_by = f"{caller_id}:{task_id}"
-        if row["claimed_by"] != expected_claimed_by:
-            raise PoolServiceError(
-                "caller_id 或 task_id 与领取记录不一致",
-                "caller_mismatch",
-                http_status=403,
-            )
+        _validate_claim_ownership(
+            dict(row) if row is not None else None,
+            action="release",
+            claim_token=claim_token,
+            caller_id=caller_id,
+            task_id=task_id,
+        )
 
         pool_repo.release(conn, account_id, claim_token, caller_id, task_id, reason)
     finally:
@@ -286,6 +332,15 @@ def complete_claim(
 
     conn = create_sqlite_connection()
     try:
+        # 临时邮箱池账号：account_id 带偏移，路由到 temp_emails（一次性资源，无项目复用/CF 删除）
+        if pool_repo.is_temp_pool_account_id(account_id):
+            temp_id = pool_repo.temp_id_from_account_id(account_id)
+            temp_row = pool_repo.get_temp_mailbox_pool_row(conn, temp_id)
+            _validate_claim_ownership(
+                temp_row, action="complete", claim_token=claim_token, caller_id=caller_id, task_id=task_id
+            )
+            return pool_repo.complete_temp_mailbox(conn, temp_id, claim_token, caller_id, task_id, result, detail)
+
         row = conn.execute(
             """
             SELECT id, email, provider, account_type, temp_mail_meta,
@@ -296,23 +351,13 @@ def complete_claim(
             """,
             (account_id,),
         ).fetchone()
-        if row is None:
-            raise PoolServiceError("账号不存在", "account_not_found", http_status=400)
-        if row["pool_status"] != "claimed":
-            raise PoolServiceError(
-                f"账号当前状态为 '{row['pool_status']}'，无法 complete",
-                "not_claimed",
-                http_status=409,
-            )
-        if row["claim_token"] != claim_token:
-            raise PoolServiceError("claim_token 不匹配", "token_mismatch", http_status=403)
-        expected_claimed_by = f"{caller_id}:{task_id}"
-        if row["claimed_by"] != expected_claimed_by:
-            raise PoolServiceError(
-                "caller_id 或 task_id 与领取记录不一致",
-                "caller_mismatch",
-                http_status=403,
-            )
+        _validate_claim_ownership(
+            dict(row) if row is not None else None,
+            action="complete",
+            claim_token=claim_token,
+            caller_id=caller_id,
+            task_id=task_id,
+        )
 
         # 从 claim 上下文读取 claimed_project_key，而非依赖 API 入参
         # 保证 claim-complete 即使未传 project_key 也能正确判定复用路径（TDD §4.1 N-03）
@@ -433,6 +478,9 @@ def append_claim_read_context(
     追加一条读取上下文日志（claim 邮箱被用于邮件读取时记录）。
     """
     if not claim_token or not claim_token.strip():
+        return
+    # 临时邮箱池账号不写 account_claim_logs（该表 account_id 对 accounts 有外键约束）
+    if pool_repo.is_temp_pool_account_id(account_id):
         return
     conn = create_sqlite_connection()
     try:

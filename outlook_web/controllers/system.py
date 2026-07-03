@@ -41,6 +41,51 @@ def utcnow() -> datetime:
 
 
 @login_required
+def api_bootstrap() -> Any:
+    """首屏引导接口：仅返回首页初始化必需的最少字段，避免走完整 /api/settings 的重查询链路。
+
+    当前 /api/settings 会执行：解密 Telegram token、解密 Watchtower token、
+    查询所有 external_api_keys + usage_summary、解密 verification_ai_api_key 等，
+    对于首页只需要布局状态和轮询配置的场景来说过于重。
+
+    本接口只查 6 个 key，不做解密，不做聚合统计。
+    """
+    ui_layout_raw = settings_repo.get_setting("ui_layout_v2", "")
+    ui_layout = None
+    if ui_layout_raw:
+        try:
+            import json as _json
+
+            parsed = _json.loads(ui_layout_raw)
+            if isinstance(parsed, dict) and parsed.get("version") == 2:
+                ui_layout = parsed
+        except Exception:
+            pass
+    if not ui_layout:
+        ui_layout = {
+            "version": 2,
+            "sidebar": {"collapsed": False},
+            "mailbox": {"groupPanelWidth": 220, "accountPanelWidth": 280},
+            "tempEmails": {"listPanelWidth": 300},
+        }
+
+    return jsonify(
+        {
+            "success": True,
+            "bootstrap": {
+                "ui_layout_v2": ui_layout,
+                "enable_auto_polling": settings_repo.get_setting("enable_auto_polling", "false") == "true",
+                "polling_interval": int(settings_repo.get_setting("polling_interval", "10")),
+                "polling_count": int(settings_repo.get_setting("polling_count", "5")),
+                "enable_compact_auto_poll": settings_repo.get_setting("enable_compact_auto_poll", "false") == "true",
+                "compact_poll_interval": int(settings_repo.get_setting("compact_poll_interval", "10")),
+                "compact_poll_max_count": int(settings_repo.get_setting("compact_poll_max_count", "5")),
+            },
+        }
+    )
+
+
+@login_required
 def api_reload_plugins() -> Any:
     from outlook_web.services.temp_mail_provider_factory import reload_plugins
 
@@ -374,11 +419,24 @@ def _version_gt(a: str, b: str) -> bool:
 
 @login_required
 def api_version_check() -> Any:
-    """检查是否有新版本可用（内存缓存，10 分钟 TTL）"""
+    """检查是否有新版本可用（内存缓存，10 分钟 TTL；可通过 enable_version_check 关闭自动检查）"""
     import json as _json
     import urllib.request
 
     global _version_cache, _version_cache_at
+
+    # 支持通过 settings 完全关闭版本检查
+    if settings_repo.get_setting("enable_version_check", "true").lower() != "true":
+        return jsonify(
+            {
+                "success": True,
+                "has_update": False,
+                "current_version": APP_VERSION,
+                "latest_version": APP_VERSION,
+                "release_url": "",
+                "disabled": True,
+            }
+        )
 
     now = time.time()
     if _version_cache is not None and (now - _version_cache_at) < _VERSION_CACHE_TTL:

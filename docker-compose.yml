@@ -27,6 +27,10 @@ services:
       SECRET_KEY: "${SECRET_KEY:?请在 .env 中设置 SECRET_KEY（必须稳定，用于加密数据库敏感信息）}"
       # 一键更新 Token：与下方 watchtower 服务保持一致；留空将使用内置默认值，可直接工作
       WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_HTTP_API_TOKEN:-outlook-mail-plus-watchtower-default}"
+      # Gunicorn 并发：默认保持单 worker，使用多线程承载同步读信/等待接口，避免后台调度器重复启动
+      GUNICORN_WORKERS: "${GUNICORN_WORKERS:-1}"
+      GUNICORN_THREADS: "${GUNICORN_THREADS:-8}"
+      GUNICORN_TIMEOUT: "${GUNICORN_TIMEOUT:-120}"
       # OAuth Token 工具（可选；如需显式覆盖，可在 .env 中配置下列变量）
       # OAUTH_TOOL_ENABLED: "true"
       # OAUTH_CLIENT_ID: ""

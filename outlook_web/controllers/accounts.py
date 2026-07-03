@@ -1623,6 +1623,70 @@ def api_batch_update_status() -> Any:
 
 
 @login_required
+def api_batch_notification_toggle() -> Any:
+    """批量切换账号通知参与开关。"""
+    data = request.get_json(silent=True) or {}
+    account_ids = data.get("account_ids", [])
+    enabled = bool(data.get("enabled", False))
+
+    if not isinstance(account_ids, list) or not account_ids:
+        return build_error_response(
+            "ACCOUNT_IDS_REQUIRED",
+            "请选择要操作通知的账号",
+            message_en="Please select accounts for notification toggle",
+        )
+
+    try:
+        parsed_ids = [int(aid) for aid in account_ids]
+    except (TypeError, ValueError):
+        return build_error_response(
+            "INVALID_PARAM",
+            "account_ids 必须为整数列表",
+            message_en="account_ids must be a list of integers",
+            status=400,
+        )
+
+    deduped_ids: List[int] = []
+    seen_ids = set()
+    for aid in parsed_ids:
+        if aid in seen_ids:
+            continue
+        seen_ids.add(aid)
+        deduped_ids.append(aid)
+
+    updated_count = 0
+    failed_count = 0
+    missing_ids: List[int] = []
+
+    for aid in deduped_ids:
+        success = accounts_repo.toggle_telegram_push(aid, enabled)
+        if success:
+            updated_count += 1
+        else:
+            failed_count += 1
+            missing_ids.append(aid)
+
+    action = "开启" if enabled else "关闭"
+    log_audit(
+        "batch_notification_toggle",
+        "account",
+        None,
+        f"批量{action}通知：成功={updated_count}，失败={failed_count}",
+    )
+
+    return jsonify(
+        {
+            "success": True,
+            "enabled": enabled,
+            "updated_count": updated_count,
+            "failed_count": failed_count,
+            "missing_ids": missing_ids,
+            "message": f"成功{action} {updated_count} 个账号通知" + (f"，{failed_count} 个失败" if failed_count else ""),
+        }
+    )
+
+
+@login_required
 def api_delete_account(account_id: int) -> Any:
     """删除账号（邮箱池管理的 CF 临时邮箱不允许手动删除）"""
     email_addr = ""
