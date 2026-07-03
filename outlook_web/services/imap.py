@@ -50,37 +50,110 @@ def decode_header_value(header_value: str) -> str:
 
 
 def get_email_body(msg) -> str:
-    """提取邮件正文"""
-    body = ""
+    """提取邮件正文
+
+    优先返回 text/plain，但如果内容太短（<20字符），则回退到 text/html。
+    这解决了 Figma 等服务的邮件问题：它们的 text/plain 部分可能几乎为空，
+    而正文内容都在 text/html 部分。
+    """
+    plain_text = ""
+    html_text = ""
+
     if msg.is_multipart():
         for part in msg.walk():
             content_type = part.get_content_type()
             content_disposition = str(part.get("Content-Disposition", ""))
 
-            if content_type == "text/plain" and "attachment" not in content_disposition:
+            if "attachment" in content_disposition:
+                continue
+
+            if content_type == "text/plain" and not plain_text:
                 try:
                     payload = part.get_payload(decode=True)
                     charset = part.get_content_charset() or "utf-8"
-                    body = payload.decode(charset, errors="replace")
-                    break
+                    plain_text = payload.decode(charset, errors="replace")
                 except Exception:
                     continue
-            elif content_type == "text/html" and "attachment" not in content_disposition and not body:
+            elif content_type == "text/html" and not html_text:
                 try:
                     payload = part.get_payload(decode=True)
                     charset = part.get_content_charset() or "utf-8"
-                    body = payload.decode(charset, errors="replace")
+                    html_text = payload.decode(charset, errors="replace")
                 except Exception:
                     continue
+
+            if plain_text and html_text:
+                break
     else:
         try:
             payload = msg.get_payload(decode=True)
             charset = msg.get_content_charset() or "utf-8"
-            body = payload.decode(charset, errors="replace")
+            content = payload.decode(charset, errors="replace")
+            if msg.get_content_type() == "text/html":
+                html_text = content
+            else:
+                plain_text = content
         except Exception:
-            body = str(msg.get_payload())
+            plain_text = str(msg.get_payload())
 
-    return body
+    # 如果 text/plain 太短（<20字符），回退到 text/html
+    # 这解决了 Figma 等服务的邮件问题
+    if len(plain_text.strip()) >= 20:
+        return plain_text
+    return html_text or plain_text
+
+
+def get_email_body_and_type(msg) -> tuple:
+    """提取邮件正文和类型（用于需要区分 HTML/Text 的场景）
+
+    返回 (body, body_type) 元组：
+    - body: 邮件正文内容
+    - body_type: "html" 或 "text"
+    """
+    plain_text = ""
+    html_text = ""
+
+    if msg.is_multipart():
+        for part in msg.walk():
+            content_type = part.get_content_type()
+            content_disposition = str(part.get("Content-Disposition", ""))
+
+            if "attachment" in content_disposition:
+                continue
+
+            if content_type == "text/plain" and not plain_text:
+                try:
+                    payload = part.get_payload(decode=True)
+                    charset = part.get_content_charset() or "utf-8"
+                    plain_text = payload.decode(charset, errors="replace")
+                except Exception:
+                    continue
+            elif content_type == "text/html" and not html_text:
+                try:
+                    payload = part.get_payload(decode=True)
+                    charset = part.get_content_charset() or "utf-8"
+                    html_text = payload.decode(charset, errors="replace")
+                except Exception:
+                    continue
+
+            if plain_text and html_text:
+                break
+    else:
+        try:
+            payload = msg.get_payload(decode=True)
+            charset = msg.get_content_charset() or "utf-8"
+            content = payload.decode(charset, errors="replace")
+            if msg.get_content_type() == "text/html":
+                html_text = content
+            else:
+                plain_text = content
+        except Exception:
+            plain_text = str(msg.get_payload())
+
+    # 如果 text/plain 太短（<20字符），回退到 text/html
+    if len(plain_text.strip()) >= 20:
+        return plain_text, "text"
+    return html_text or plain_text, "html" if html_text else "text"
 
 
 def _select_folder(connection, folder: str) -> Optional[str]:
@@ -652,6 +725,7 @@ def get_email_detail_imap_with_server(
         except Exception:
             raw_text = ""
 
+        body, body_type = get_email_body_and_type(msg)
         return {
             "id": message_id,
             "subject": decode_header_value(msg.get("Subject", "无主题")),
@@ -659,7 +733,8 @@ def get_email_detail_imap_with_server(
             "to": decode_header_value(msg.get("To", "")),
             "cc": decode_header_value(msg.get("Cc", "")),
             "date": msg.get("Date", "未知时间"),
-            "body": get_email_body(msg),
+            "body": body,
+            "body_type": body_type,
             "raw_content": raw_text,
         }
     except Exception:

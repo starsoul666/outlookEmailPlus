@@ -16,6 +16,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Verify release version alignment
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: python scripts/check_release_version.py
+
       - name: Extract release notes from CHANGELOG.md
         shell: bash
         run: |

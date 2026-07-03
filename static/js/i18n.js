@@ -1047,6 +1047,13 @@
         '请选择要批量拉取邮件的账号': 'Please select accounts to batch fetch emails',
         '正在批量拉取邮件': 'Batch fetching emails',
         '批量拉取完成': 'Batch fetch completed',
+        // ── 批量通知开关（Issue #64）──
+        '开启通知': 'Enable Notifications',
+        '关闭通知': 'Disable Notifications',
+        '批量开启通知完成': 'Batch enable notifications completed',
+        '批量关闭通知完成': 'Batch disable notifications completed',
+        '请选择要批量操作通知的账号': 'Please select accounts for batch notification toggle',
+        '批量拉取失败': 'Batch fetch failed',
         '收件箱 + 垃圾箱': 'Inbox + Junk'
     };
 

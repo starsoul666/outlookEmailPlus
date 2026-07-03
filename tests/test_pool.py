@@ -765,6 +765,9 @@ class PoolServiceTests(unittest.TestCase):
             conn.execute("DELETE FROM account_project_usage")
             conn.execute("DELETE FROM account_claim_logs")
             conn.execute("DELETE FROM accounts")
+            # temp_emails 自 v24 起纳入邮箱池，可被 claim-random 领取，
+            # 同样需要清理以避免污染“池中无可用账号”类断言。
+            conn.execute("DELETE FROM temp_emails")
             conn.commit()
         finally:
             conn.close()

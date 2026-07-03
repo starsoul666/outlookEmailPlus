@@ -51,15 +51,12 @@ def sanitize_input(text: str, max_length: int = 500) -> str:
 
 @login_required
 def api_get_groups() -> Any:
-    """获取所有分组"""
-    groups = groups_repo.load_groups()
-    # 添加每个分组的邮箱数量
-    for group in groups:
-        if group["name"] == "临时邮箱":
-            # 临时邮箱分组从 temp_emails 表获取数量
-            group["account_count"] = temp_emails_repo.get_temp_email_count()
-        else:
-            group["account_count"] = groups_repo.get_group_account_count(group["id"])
+    """获取所有分组（含各分组邮箱数量，单次 SQL 聚合）"""
+    groups = groups_repo.load_groups_with_account_count()
+    # 临时邮箱分组的数量需要从 temp_emails 表获取
+    temp_group = next((g for g in groups if g["name"] == "临时邮箱"), None)
+    if temp_group is not None:
+        temp_group["account_count"] = temp_emails_repo.get_temp_email_count()
     return jsonify({"success": True, "groups": groups})
 
 

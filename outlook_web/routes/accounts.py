@@ -64,6 +64,11 @@ def create_blueprint() -> Blueprint:
         methods=["POST"],
     )
     bp.add_url_rule(
+        "/api/accounts/batch-notification-toggle",
+        view_func=accounts_controller.api_batch_notification_toggle,
+        methods=["POST"],
+    )
+    bp.add_url_rule(
         "/api/accounts/tags",
         view_func=accounts_controller.api_batch_manage_tags,
         methods=["POST"],

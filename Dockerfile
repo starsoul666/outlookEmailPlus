@@ -7,7 +7,10 @@ WORKDIR /app
 # 设置环境变量
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    GUNICORN_WORKERS=1 \
+    GUNICORN_THREADS=8 \
+    GUNICORN_TIMEOUT=120
 
 # 复制依赖文件
 COPY requirements.txt .
@@ -21,7 +24,7 @@ RUN pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple && \
 COPY . .
 
 # 创建数据目录
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && chmod +x /app/scripts/start-gunicorn.sh
 
 # 暴露端口
 EXPOSE 5000
@@ -29,6 +32,6 @@ EXPOSE 5000
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD ["python","-c","import urllib.request as u; u.urlopen('http://localhost:5000/healthz', timeout=4).read()"]
 
-# 启动应用（使用 Gunicorn，单 worker 避免 session 共享问题）
+# 启动应用：默认单 worker + 多线程，避免同步长轮询阻塞整站
 # 注意：禁用 --preload，避免在 master 进程中启动后台调度线程
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "--timeout", "120", "--access-logfile", "-", "web_outlook_app:app"]
+CMD ["scripts/start-gunicorn.sh"]

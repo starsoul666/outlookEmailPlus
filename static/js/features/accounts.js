@@ -683,6 +683,37 @@
             }
         }
 
+        // 批量切换账号通知参与开关（Issue #64）
+        async function batchNotificationToggle(enabled) {
+            if (selectedAccountIds.size === 0) {
+                showToast(translateAppTextLocal('请选择要批量操作通知的账号'), 'error');
+                return;
+            }
+            const ids = Array.from(selectedAccountIds);
+            try {
+                const response = await fetch('/api/accounts/batch-notification-toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ account_ids: ids, enabled })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showToast(
+                        data.message || (enabled ? translateAppTextLocal('批量开启通知完成') : translateAppTextLocal('批量关闭通知完成')),
+                        'success'
+                    );
+                    if (currentGroupId) {
+                        delete accountsCache[currentGroupId];
+                        loadAccountsByGroup(currentGroupId, true);
+                    }
+                } else {
+                    handleApiError(data, translateAppTextLocal('批量操作失败'));
+                }
+            } catch (error) {
+                showToast(translateAppTextLocal('操作失败'), 'error');
+            }
+        }
+
         // 切换账号通知参与开关（沿用旧 Telegram 接口）
         async function toggleTelegramPush(accountId, enabled) {
             try {

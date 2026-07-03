@@ -3,6 +3,111 @@
 > 本文档记录项目开发过程中的操作日志，按日期倒序排列。
 
 ---
+## 2026-06-13
+
+### 操作记录
+
+#### 280. CodeXWeb VPS 部署 outlookEmailPlus
+
+**时间**：2026-06-13 05:37 UTC（2026-06-13 13:37 CST）
+
+**操作背景**：用户要求将 `ZeroPointSix/outlookEmailPlus` 部署到配置的 VPS。
+
+**执行内容**：
+
+- VPS 路径：`/srv/outlook-email-plus`；检出 `main` commit `37e939b`。
+- 安装 Docker Compose v2，使用 `ghcr.io/zeropointsix/outlook-email-plus:latest` 启动 app。
+- 生成 VPS 本地 `.env`，绑定 `127.0.0.1:5001`，持久化 `data/`、`.runtime/`、`plugins/`。
+- 新增部署层 `docker-compose.override.yml`，为 Watchtower 设置 `DOCKER_API_VERSION=1.44`。
+- 新增 nginx vhost `outlook.137-184-23-118.sslip.io`，通过 certbot 启用 HTTPS 与 HTTP -> HTTPS 跳转。
+
+**验证**：
+
+- `https://outlook.137-184-23-118.sslip.io/healthz` 返回 HTTP/2 200，`status=ok`，`version=2.7.0`。
+- 首页 `/` 返回 302 到 `/login`，符合登录保护预期。
+- `outlook-email-plus` 与 `watchtower` 容器均为 healthy。
+- TLS 证书有效期至 2026-09-11 04:38:33 UTC，并已启用自动续期。
+
+**是否改动代码**：否（部署与文档留痕；无应用代码改动）
+
+---
+
+
+## 2026-06-11
+
+### 操作记录
+
+#### 279. CodeXWeb 自动巡检无可处理候选记录
+
+**时间**：2026-06-11 02:05 UTC（2026-06-10 19:05 PDT；定时运行触发于 19:00 PDT）
+
+**操作背景**：
+定时执行 GitHub Issue/PR 自动巡检。规则为：先确认 GitHub App 可访问账号，再从该账号下选择最近推送的 3 个非归档代码仓库，只检查这些仓库的 open Issues 和 open PRs；每轮最多处理 1 个对象；确认可处理并留言认领前不得切换对象。
+
+**巡检范围**：
+
+| 仓库 | pushed_at | open Issues | open PRs | Issue candidates | PR candidates |
+|------|-----------|-------------|----------|------------------|---------------|
+| `ZeroPointSix/outlookEmailPlus` | `2026-06-11T01:52:56Z` | 2 | 7 | 0 | 0 |
+| `ZeroPointSix/Cliprompt` | `2026-06-10T21:10:28Z` | 0 | 20 | 0 | 0 |
+| `ZeroPointSix/modeltestweb` | `2026-06-10T19:09:41Z` | 7 | 3 | 0 | 0 |
+
+**候选核查结果**：
+
+- 本轮候选数：0；未选中 Issue 或 PR。
+- `ZeroPointSix/outlookEmailPlus`: existing-claim-or-in-progress-comment: 4; covered-by-open-pr:#81: 1; no-unresolved-actionable-review-threads: 4
+- `ZeroPointSix/Cliprompt`: existing-claim-or-in-progress-comment: 3; no-unresolved-actionable-review-threads: 17
+- `ZeroPointSix/modeltestweb`: existing-claim-or-in-progress-comment: 4; appears-covered-by-existing-pr-or-implementation: 2; covered-by-open-pr:#18: 3; no-unresolved-actionable-review-threads: 1
+- `outlookEmailPlus` Issue #79 已由 open PR #81 覆盖，因此未认领。
+- 未发现未被认领的 open Issue，也未发现带未解决 actionable review thread 且未被认领的 open PR。
+
+**验证与改动**：
+
+- GitHub 连接器确认可访问账号：`ZeroPointSix`。
+- 远程沙箱 `health` 通过，复用 workspace `ws-a80c9a23-a1ba-4565-9aa2-9ed467d96fb5` 执行认证 REST/GraphQL 只读扫描。
+- 扫描输出文件：`codexweb-triage-20260611-0200.json`。
+- 本轮没有认领 source Issue/PR，没有创建分支，没有代码改动，没有运行项目测试，没有创建 PR，也没有自动合并。
+- 本次仅追加 Workspace 巡检记录，并同步 Memory 与 Gmail 摘要。
+
+**是否改动代码**：否（仅巡检记录）
+
+---
+
+#### 278. CodeXWeb 自动巡检无可处理候选记录
+
+**时间**：2026-06-11 01:45 UTC（2026-06-10 18:45 PDT）
+
+**操作背景**：
+定时执行 GitHub Issue/PR 自动巡检。规则为：先从可访问账号下选择最近推送的 3 个非归档代码仓库，只检查这些仓库的 open Issues 和 open PRs；每轮最多处理 1 个对象；在确认可处理并留言认领前不得切换对象。
+
+**巡检范围**：
+
+| 仓库 | pushed_at | open Issues | open PRs |
+|------|-----------|-------------|----------|
+| `ZeroPointSix/outlookEmailPlus` | `2026-06-10T21:55:52Z` | 2 | 7 |
+| `ZeroPointSix/Cliprompt` | `2026-06-10T21:10:28Z` | 0 | 20 |
+| `ZeroPointSix/modeltestweb` | `2026-06-10T19:09:41Z` | 7 | 3 |
+
+**候选核查结果**：
+
+1. 初筛仅发现 `outlookEmailPlus` Issue #79 可能符合“未认领 open Issue”条件。
+2. 认领前复核 Issue #79 评论与 open draft PR #81，确认 PR #81 正文包含 `Fixes #79`，并已有 CodeXWeb 认领与处理完成记录：
+   - PR #81 认领评论：`4674759805`
+   - PR #81 处理完成评论：`4675082167`
+3. 因 Issue #79 已由 PR #81 覆盖，且该 PR 已有 CodeXWeb 处理记录，本轮未在 Issue #79 或任何 PR 上留言认领。
+4. `Cliprompt` open PRs 均为已认领或无未解决 actionable review thread；无 open Issue。
+5. `modeltestweb` open Issues 均为已覆盖、已认领或设计/验收上下文；open PRs 均已有处理记录。
+
+**验证与改动**：
+
+- 远程沙箱 `health` 通过，复用 workspace `ws-a80c9a23-a1ba-4565-9aa2-9ed467d96fb5` 执行只读 REST/GraphQL 扫描。
+- 扫描输出文件：`codexweb-triage-20260611-0145.json`。
+- 本轮没有认领 source Issue/PR，没有创建分支，没有代码改动，没有运行项目测试，没有创建 PR，也没有自动合并。
+- 本次仅追加 Workspace 巡检记录，并同步 Memory 与 Gmail 摘要。
+
+**是否改动代码**：否（仅巡检记录）
+
+---
 
 ## 2026-05-19
 

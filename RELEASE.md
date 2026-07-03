@@ -82,8 +82,15 @@ git pull --ff-only
 
 2. **准备版本内容**
 
+- 更新 `outlook_web/__init__.py` 中的 `__version__`，必须与即将发布的 Tag 一致（`vX.Y.Z` → `X.Y.Z`）
 - 更新 `CHANGELOG.md`：新增 `## [vX.Y.Z] - YYYY-MM-DD`，写清新功能/修复/兼容性说明
 - （可选）更新 README / README.en 的 Docker 示例版本号
+
+本地可预检（模拟 tag 构建门禁）：
+
+```bash
+GITHUB_REF=refs/tags/vX.Y.Z python scripts/check_release_version.py
+```
 
 3. **提交版本准备**
 
@@ -107,7 +114,8 @@ git push origin vX.Y.Z
 
 补充说明（当前仓库真实行为）：
 - `docker-build-push.yml` 在真正构建镜像前，会先跑 `quality-gate`
-- `quality-gate` 内包含 `black --check`、`isort --check-only`、`flake8`、`mypy`、`bandit` 与全量 `unittest`
+- push `v*.*.*` tag 时，`quality-gate` 首先执行 `scripts/check_release_version.py`：要求 `__version__` 与 tag 一致，且 `CHANGELOG.md` 含对应章节
+- `quality-gate` 内还包含 `black --check`、`isort --check-only`、`flake8`、`mypy`、`bandit` 与全量 `unittest`
 - 其中任一失败，`build-and-push` job 会被跳过，注册表镜像不会发布
 
 6. **验证镜像**

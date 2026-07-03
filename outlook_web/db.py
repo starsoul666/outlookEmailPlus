@@ -37,7 +37,8 @@ from outlook_web.security.crypto import (
 # v21：2026-04-11 Outlook OAuth 验证码提取渠道记忆（accounts.preferred_verification_channel）
 # v22：2026-04-16 邮箱池项目维度成功复用（accounts.claimed_project_key + account_project_usage.success_*）
 # v23：2026-04-19 数据概览大盘（verification_extract_logs + overview 兼容字段）
-DB_SCHEMA_VERSION = 23
+# v24：2026-07-01 临时邮箱接入邮箱池（temp_emails 新增池生命周期字段：pool_status/claimed_by/...，可被 claim-random 领取）
+DB_SCHEMA_VERSION = 24
 DB_SCHEMA_VERSION_KEY = "db_schema_version"
 DB_SCHEMA_LAST_UPGRADE_TRACE_ID_KEY = "db_schema_last_upgrade_trace_id"
 DB_SCHEMA_LAST_UPGRADE_ERROR_KEY = "db_schema_last_upgrade_error"
@@ -1185,6 +1186,43 @@ def init_db(database_path: Optional[str] = None):
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_vel_result_type
             ON verification_extract_logs(result_type)
+            """)
+
+        # v24: 临时邮箱接入邮箱池 — temp_emails 新增池生命周期字段
+        # 语义：所有临时邮箱自动进池，claim-random 在 accounts 无命中时可领取 temp_emails；
+        #       account_id 通过 TEMP_POOL_ID_OFFSET 偏移与 accounts 区分（见 repositories/pool.py）。
+        cursor.execute("PRAGMA table_info(temp_emails)")
+        temp_email_columns_v24 = [col[1] for col in cursor.fetchall()]
+        for col_def in [
+            ("pool_status", "TEXT DEFAULT NULL"),
+            ("claimed_by", "TEXT DEFAULT NULL"),
+            ("claimed_at", "TEXT DEFAULT NULL"),
+            ("lease_expires_at", "TEXT DEFAULT NULL"),
+            ("claim_token", "TEXT DEFAULT NULL"),
+            ("last_claimed_at", "TEXT DEFAULT NULL"),
+            ("last_result", "TEXT DEFAULT NULL"),
+        ]:
+            if col_def[0] not in temp_email_columns_v24:
+                cursor.execute(f"ALTER TABLE temp_emails ADD COLUMN {col_def[0]} {col_def[1]}")
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_temp_emails_pool_status
+            ON temp_emails(pool_status)
+            """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_temp_emails_claim_token
+            ON temp_emails(claim_token)
+            """)
+        # 回填历史行的 domain/prefix：老库存在 domain IS NULL 的临时邮箱，
+        # 否则按 email_domain 领取时会被过滤而继续返回 NO_AVAILABLE_ACCOUNT。
+        cursor.execute("""
+            UPDATE temp_emails
+            SET domain = substr(email, instr(email, '@') + 1)
+            WHERE (domain IS NULL OR domain = '') AND instr(email, '@') > 0
+            """)
+        cursor.execute("""
+            UPDATE temp_emails
+            SET prefix = substr(email, 1, instr(email, '@') - 1)
+            WHERE (prefix IS NULL OR prefix = '') AND instr(email, '@') > 0
             """)
 
         # 迁移现有明文数据为加密数据

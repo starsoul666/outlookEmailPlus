@@ -56,13 +56,19 @@
         // 从后端读取布局状态
         async function loadLayoutFromServer() {
             try {
-                const response = await fetch('/api/settings');
+                const response = await fetch('/api/bootstrap');
                 const data = await response.json();
-                if (data.success && data.settings && data.settings.ui_layout_v2) {
-                    const layout = data.settings.ui_layout_v2;
-                    if (layout.version === 2) {
-                        uiLayoutV2 = layout;
-                        return layout;
+                if (data.success && data.bootstrap) {
+                    // 缓存轮询设置供 initPollingSettings 使用，避免重复请求
+                    if (!window.__bootstrapPollingSettings) {
+                        window.__bootstrapPollingSettings = data.bootstrap;
+                    }
+                    if (data.bootstrap.ui_layout_v2) {
+                        const layout = data.bootstrap.ui_layout_v2;
+                        if (layout.version === 2) {
+                            uiLayoutV2 = layout;
+                            return layout;
+                        }
                     }
                 }
             } catch (error) {
@@ -935,8 +941,8 @@
             // 加载数据概览
             if (typeof initOverview === 'function') initOverview();
 
-            // 检查是否有版本更新（页面加载时调一次）
-            checkVersionUpdate();
+            // 检查是否有版本更新（延迟 5 秒触发，避免首屏抢占唯一 sync worker）
+            setTimeout(checkVersionUpdate, 5000);
         });
 
         // 初始化颜色选择器
@@ -2962,11 +2968,18 @@ ${details}
         // 初始化轮询设置
         async function initPollingSettings() {
             try {
+                // 优先使用 bootstrap 已缓存的轮询设置，避免首页阶段重复请求 /api/settings
+                const cached = window.__bootstrapPollingSettings;
+                if (cached) {
+                    applyPollingSettings(cached);
+                    delete window.__bootstrapPollingSettings;
+                    return;
+                }
+                // 降级：如果 bootstrap 未执行或失败，回退到 /api/settings
                 const response = await fetch('/api/settings');
                 const data = await response.json();
 
                 if (data.success) {
-                    // [Phase 3] 统一使用 applyPollingSettings（内部已调用引擎 applyPollSettings）
                     applyPollingSettings(data.settings);
                 }
             } catch (error) {
@@ -4486,32 +4499,58 @@ ${details}
 
         async function batchFetchSelectedEmails(accounts) {
             const toastId = 'batch-fetch-toast-' + Date.now();
-            let processedAccounts = 0;
-            let successAccounts = 0;
-            const failedAccounts = [];
+            showPersistentToast(toastId, `${translateAppTextLocal('正在批量拉取邮件')}...`);
 
-            showPersistentToast(toastId, `${translateAppTextLocal('正在批量拉取邮件')} 0 / ${accounts.length}`);
+            const ids = accounts.map(a => a.id);
 
-            for (const acc of accounts) {
-                const result = await fetchLatestFoldersForAccount(acc);
-                processedAccounts++;
+            try {
+                const response = await fetch('/api/emails/batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ account_ids: ids, folders: ['inbox', 'junkemail'], skip: 0, top: 10 })
+                });
+                const data = await response.json();
 
-                if (result.success) {
-                    successAccounts++;
-                } else {
-                    failedAccounts.push(acc.email);
+                dismissPersistentToast(toastId);
+
+                if (!data.success) {
+                    handleApiError(data, translateAppTextLocal('批量拉取失败'));
+                    return;
                 }
 
-                updatePersistentToast(toastId, `${translateAppTextLocal('正在批量拉取邮件')} ${processedAccounts} / ${accounts.length}`);
-            }
+                // 回写缓存 + 刷新当前邮箱
+                let successAccounts = 0;
+                const failedAccounts = [];
 
-            dismissPersistentToast(toastId);
-            const failCount = failedAccounts.length;
-            let msg = `${translateAppTextLocal('批量拉取完成')}：${translateAppTextLocal('成功')} ${successAccounts}，${translateAppTextLocal('失败')} ${failCount}`;
-            if (failCount > 0) {
-                msg += `（${failedAccounts.join(', ')}）`;
+                for (const result of (data.results || [])) {
+                    if (result.success) {
+                        successAccounts++;
+                        const emailAddr = result.email || '';
+                        const folders = result.folders || {};
+                        for (const [folder, folderData] of Object.entries(folders)) {
+                            if (folderData && folderData.success) {
+                                if (folderData.account_summary && typeof syncAccountSummaryToAccountCache === 'function') {
+                                    syncAccountSummaryToAccountCache(emailAddr, folderData.account_summary);
+                                }
+                                cacheBatchFetchedFolder(emailAddr, folder, folderData);
+                                refreshCurrentMailboxIfNeeded(emailAddr, folder, folderData);
+                            }
+                        }
+                    } else {
+                        failedAccounts.push(result.email || result.account_id);
+                    }
+                }
+
+                const failCount = failedAccounts.length;
+                let msg = `${translateAppTextLocal('批量拉取完成')}：${translateAppTextLocal('成功')} ${successAccounts}，${translateAppTextLocal('失败')} ${failCount}`;
+                if (failCount > 0) {
+                    msg += `（${failedAccounts.join(', ')}）`;
+                }
+                showToast(msg, failCount > 0 ? 'warning' : 'success');
+            } catch (error) {
+                dismissPersistentToast(toastId);
+                showToast(translateAppTextLocal('操作失败'), 'error');
             }
-            showToast(msg, failCount > 0 ? 'warning' : 'success');
         }
 
         async function fetchLatestFoldersForAccount(acc) {
@@ -4752,6 +4791,8 @@ ${details}
                 const res = await fetch('/api/system/version-check');
                 if (!res.ok) return;
                 const data = await res.json();
+                // 版本检查被管理员关闭时，不再提示也不再重试
+                if (data.disabled) return;
                 if (data.has_update) {
                     const banner = document.getElementById('versionUpdateBanner');
                     const msg = document.getElementById('versionUpdateMsg');
