@@ -9,6 +9,11 @@ import secrets
 import shutil
 import sys
 
+# Windows 控制台 UTF-8 支持
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+
 from dotenv import load_dotenv
 
 
