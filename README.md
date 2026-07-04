@@ -231,10 +231,20 @@ networks:
 
 ### 本地运行
 
+使用 `uv`（推荐）：
+
+```bash
+uv venv
+uv pip install -r requirements.txt
+uv run python start.py
+```
+
+或使用标准 `venv` / `pip`：
+
 ```bash
 python -m venv .venv
 pip install -r requirements.txt
-python web_outlook_app.py
+python start.py
 ```
 
 ### 运行测试
