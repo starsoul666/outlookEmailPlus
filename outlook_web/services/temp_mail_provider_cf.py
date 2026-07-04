@@ -459,9 +459,18 @@ class CloudflareTempMailProvider(TempMailProviderBase):
         try:
             data = resp.json()
         except Exception:
+            snippet = (resp.text or "")[:200]
+            content_type = resp.headers.get("Content-Type", "")
+            logger.warning(
+                "[cf_provider] create_address non-JSON response: "
+                "status=%d content_type=%s body=%s",
+                resp.status_code,
+                content_type,
+                snippet,
+            )
             return {
                 "success": False,
-                "error": "CF Worker 返回非 JSON 响应",
+                "error": f"CF Worker 返回非 JSON 响应 (Content-Type: {content_type}, body: {snippet!r})",
                 "error_code": "UPSTREAM_BAD_PAYLOAD",
             }
 
@@ -767,9 +776,18 @@ class CloudflareTempMailProvider(TempMailProviderBase):
         try:
             data = resp.json()
         except Exception:
+            snippet = (resp.text or "")[:200]
+            content_type = resp.headers.get("Content-Type", "")
+            logger.warning(
+                "[cf_provider] get_cf_worker_domains non-JSON response: "
+                "status=%d content_type=%s body=%s",
+                resp.status_code,
+                content_type,
+                snippet,
+            )
             return {
                 "success": False,
-                "error": "CF Worker 返回非 JSON 响应",
+                "error": f"CF Worker 返回非 JSON 响应 (Content-Type: {content_type}, body: {snippet!r})",
                 "error_code": "UPSTREAM_BAD_PAYLOAD",
             }
 
