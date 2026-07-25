@@ -53,7 +53,13 @@ def filter_channel_plan(email: str, channel_plan: List[str]) -> List[str]:
         for ch in expired_channels:
             account_cache.pop(ch, None)
 
-    return [ch for ch in channel_plan if status_snapshot.get(ch) != "unavailable"]
+    filtered = [ch for ch in channel_plan if status_snapshot.get(ch) != "unavailable"]
+    # 全部渠道都被缓存为不可用时，回退到完整 plan 并清缓存，避免永久 502 且无法重试探测。
+    if not filtered and channel_plan:
+        with _lock:
+            _cache.pop(email, None)
+        return list(channel_plan)
+    return filtered
 
 
 def clear_for_account(email: str) -> None:

@@ -48,6 +48,22 @@ class VerificationExtractorOptionsTests(unittest.TestCase):
         self.assertEqual(result.get("verification_code"), "AB12CD")
         self.assertIsNone(result.get("verification_link"))
 
+    def test_default_options_extract_hyphenated_confirmation_code(self):
+        """主题/正文中的分段码（如 HMN-725）应被默认规则识别为 high confidence"""
+        func = self._require_new_api()
+        email = {
+            "subject": "SpaceXAI confirmation code: HMN-725",
+            "body": "Please use the code below to validate your email address.\n\nHMN-725\n",
+            "body_html": "<p>Please use the code below.</p><p>HMN-725</p>",
+        }
+
+        result = func(email)
+        gated = extractor.apply_confidence_gate(result, enforce_mutual_exclusion=False)
+
+        self.assertEqual(result.get("verification_code"), "HMN-725")
+        self.assertEqual(result.get("code_confidence"), "high")
+        self.assertEqual(gated.get("verification_code"), "HMN-725")
+
     def test_extract_with_code_source_subject_only(self):
         func = self._require_new_api()
         email = {

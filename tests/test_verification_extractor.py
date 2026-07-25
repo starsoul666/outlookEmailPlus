@@ -60,6 +60,12 @@ class TestVerificationExtractor(unittest.TestCase):
         result = smart_extract_verification_code(content)
         self.assertEqual(result, "ABC123")
 
+    def test_smart_extract_hyphenated_confirmation_code(self):
+        """智能识别：confirmation code + 带连字符分段码"""
+        content = "SpaceXAI confirmation code: HMN-725. Use it to validate your email."
+        result = smart_extract_verification_code(content)
+        self.assertEqual(result, "HMN-725")
+
     def test_smart_extract_code_before_keyword(self):
         """
         测试用例 UT-004：智能识别 - 验证码在关键词前面

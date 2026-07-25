@@ -365,6 +365,19 @@ def extract_verification_for_outlook(
     verification_attempted = False
     last_log_channel = "unknown"
 
+    # 渠道 plan 为空时不应伪装成“全部认证失败”，否则会抬成 UPSTREAM_READ_FAILED/502。
+    if not channel_plan:
+        return {
+            "success": False,
+            "error_code": "EMAIL_NOT_FOUND",
+            "error_message": "未找到匹配邮件",
+            "error_status": 404,
+            "upstream_errors": {},
+            "new_refresh_token": new_refresh_token,
+            "_log_channel": last_log_channel,
+            "_log_used_ai": False,
+        }
+
     for channel in channel_plan:
         last_log_channel = channel or last_log_channel
         channel_result = fetch_emails_and_detail_for_channel(

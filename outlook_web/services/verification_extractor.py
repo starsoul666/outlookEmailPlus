@@ -41,8 +41,10 @@ VERIFICATION_KEYWORDS = [
     "短信验证码",
 ]
 
-# 验证码模式（4-8位数字或字母，必须包含至少一个数字）
-VERIFICATION_PATTERN = r"\b[A-Z0-9]{4,8}\b"
+# 验证码模式（4-8 位数字/字母，或带单连字符的分段码，如 HMN-725 / AB12CD）
+VERIFICATION_PATTERN = r"\b(?:[A-Z0-9]{4,8}|[A-Z0-9]{2,8}-[A-Z0-9]{2,8})\b"
+# 默认 options 提取仅扩展“带连字符分段码”，避免把 URL 片段（如 token=abc123）误判为验证码
+HYPHENATED_VERIFICATION_PATTERN = r"\b[A-Z0-9]{2,8}-[A-Z0-9]{2,8}\b"
 
 # 链接正则表达式
 LINK_PATTERN = r'https?://[^\s<>"{}|\\^`\[\]]+'
@@ -560,9 +562,15 @@ def extract_verification_info_with_options(
     code_re = _build_code_regex(code_regex=code_regex, code_length=code_length)
     # 仅 code_regex 具有判别力，code_length 只是宽度约束，不自动提权
     caller_directed_code = bool(code_regex)
+    use_default_code_pattern = not code_regex and not code_length
 
     # ── 验证码提取 & 置信度 ──
     verification_code = _smart_extract_code_by_keywords(source_text, code_re)
+    # 默认规则：关键词附近额外尝试带连字符分段码（如 HMN-725），不扩大 fallback 范围
+    if not verification_code and use_default_code_pattern:
+        verification_code = _smart_extract_code_by_keywords(
+            source_text, re.compile(HYPHENATED_VERIFICATION_PATTERN, re.IGNORECASE)
+        )
     code_confidence: str = "high" if verification_code else "low"
     if not verification_code:
         verification_code = _fallback_extract_code(source_text, code_re)

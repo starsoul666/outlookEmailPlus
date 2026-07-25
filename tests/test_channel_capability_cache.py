@@ -119,6 +119,22 @@ class TestChannelCapabilityCache(unittest.TestCase):
         filtered = filter_channel_plan("uncached@test.com", plan)
         self.assertEqual(filtered, plan)
 
+    # 全部渠道缓存为不可用时，回退完整 plan 并清缓存，避免永久跳过
+    def test_filter_all_unavailable_falls_back_to_full_plan(self):
+        from outlook_web.services.channel_capability_cache import (
+            filter_channel_plan,
+            get_status,
+            set_status,
+        )
+
+        plan = ["graph_inbox", "graph_junk", "imap_new", "imap_old"]
+        for ch in plan:
+            set_status("user@test.com", ch, available=False)
+
+        filtered = filter_channel_plan("user@test.com", plan)
+        self.assertEqual(filtered, plan)
+        self.assertIsNone(get_status("user@test.com", "graph_inbox"))
+
 
 if __name__ == "__main__":
     unittest.main()
